@@ -6,11 +6,13 @@ world:
   offset: [0, 0] # the offset of the world on x and y 
 
 robot:
-  - kinematics: {name: 'omni'}  # omni, diff, acker
+  - kinematics: {name: 'omni'}  # omni, diff, acker (omni expects twist [vx, vy, w] in robot frame)
     # shape: {name: 'circle', radius: 0.2}  # radius
     shape: {name: 'rectangle', length: 0.3, width: 1.0} 
-    state: [1, 1, 0]  
-    goal: [9, 9, 0] 
+    state: [1.0, 1.0, 0.0]
+    goal: [9.0, 9.0, 0.0]
+    vel_max: [1.0, 1.0, 1.0]    # 可顺便写成浮点
+    vel_min: [-1.0, -1.0, -1.0]
     # acce: [3, .inf]   # acce of [linear, angular]  or [v_x, v_y] or [linear, steer]
     behavior: {name: 'dash'} # move toward to the goal directly 
     color: 'g'

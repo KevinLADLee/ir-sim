@@ -94,6 +94,8 @@ class KeyboardControl:
         self.key_ang_max = keyboard_kwargs.get("key_ang_max", 1.0)
         self.key_lv = keyboard_kwargs.get("key_lv", 0.0)
         self.key_ang = keyboard_kwargs.get("key_ang", 0.0)
+        self.key_lat_max = keyboard_kwargs.get("key_lat_max", 3.0)
+        self.key_lat = keyboard_kwargs.get("key_lat", 0.0)
         self.key_id = keyboard_kwargs.get("key_id", 0)
         self.alt_flag = 0
 
@@ -128,10 +130,12 @@ class KeyboardControl:
             self.logger.info("start to keyboard control")
 
             commands = [
-                ["w", "forward"],
-                ["s", "backward"],
-                ["a", "turn left"],
-                ["d", "turn right"],
+                ["w", "forward (+vx)"],
+                ["s", "backward (-vx)"],
+                ["j", "strafe left (-vy)"],
+                ["k", "strafe right (+vy)"],
+                ["a", "turn left (+w)"],
+                ["d", "turn right (-w)"],
                 ["q", "decrease linear velocity"],
                 ["e", "increase linear velocity"],
                 ["z", "decrease angular velocity"],
@@ -193,6 +197,24 @@ class KeyboardControl:
                 "key_release_event", self._on_mpl_release
             )
 
+    def _current_vel_dim(self) -> int:
+        """Return the velocity dimension of the currently controlled robot."""
+        if self.env_ref is None:
+            return 2
+        try:
+            robot = self.env_ref.robot_list[self.key_id]
+            return robot.vel_shape[0]
+        except Exception:
+            return 2
+
+    def _update_key_vel(self) -> None:
+        """Update key_vel shape based on current robot's kinematics."""
+        vel_dim = self._current_vel_dim()
+        if vel_dim >= 3:
+            self.key_vel = np.array([[self.key_lv], [self.key_lat], [self.key_ang]])
+        else:
+            self.key_vel = np.array([[self.key_lv], [self.key_ang]])
+
     def _on_pynput_press(self, key: Any) -> None:
         """
         Handle key press events (pynput backend).
@@ -230,12 +252,16 @@ class KeyboardControl:
                     self.key_lv = self.key_lv_max
                 if key.char == "s":
                     self.key_lv = -self.key_lv_max
+                if key.char == "j":
+                    self.key_lat = -self.key_lat_max
+                if key.char == "k":
+                    self.key_lat = self.key_lat_max
                 if key.char == "a":
                     self.key_ang = self.key_ang_max
                 if key.char == "d":
                     self.key_ang = -self.key_ang_max
 
-                self.key_vel = np.array([[self.key_lv], [self.key_ang]])
+                self._update_key_vel()
 
         except AttributeError:
             # Handle other special keys that don't have char attribute
@@ -258,6 +284,10 @@ class KeyboardControl:
                 self.key_lv = 0
             if key.char == "s":
                 self.key_lv = 0
+            if key.char == "j":
+                self.key_lat = 0
+            if key.char == "k":
+                self.key_lat = 0
             if key.char == "a":
                 self.key_ang = 0
             if key.char == "d":
@@ -300,7 +330,7 @@ class KeyboardControl:
                 self.env_ref.reload_flag = True
                 self.logger.info("reload the environment")
 
-            self.key_vel = np.array([[self.key_lv], [self.key_ang]])
+            self._update_key_vel()
 
         except AttributeError:
             if "alt" in key.name:
@@ -358,12 +388,16 @@ class KeyboardControl:
                 self.key_lv = self.key_lv_max
             if base == "s":
                 self.key_lv = -self.key_lv_max
+            if base == "j":
+                self.key_lat = -self.key_lat_max
+            if base == "k":
+                self.key_lat = self.key_lat_max
             if base == "a":
                 self.key_ang = self.key_ang_max
             if base == "d":
                 self.key_ang = -self.key_ang_max
 
-            self.key_vel = np.array([[self.key_lv], [self.key_ang]])
+            self._update_key_vel()
 
     def _on_mpl_release(self, event: Any) -> None:
         """
@@ -380,6 +414,10 @@ class KeyboardControl:
                 self.key_lv = 0
             if base == "s":
                 self.key_lv = 0
+            if base == "j":
+                self.key_lat = 0
+            if base == "k":
+                self.key_lat = 0
             if base == "a":
                 self.key_ang = 0
             if base == "d":
@@ -442,7 +480,7 @@ class KeyboardControl:
         if base in ("escape", "esc"):
             self.env_ref.quit_flag = True
 
-        self.key_vel = np.array([[self.key_lv], [self.key_ang]])
+        self._update_key_vel()
 
     # Minimal grid table formatter to avoid external dependency
     def _format_grid_table(self, headers: list[str], rows: list[list[Any]]) -> str:

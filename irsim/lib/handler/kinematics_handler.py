@@ -28,6 +28,8 @@ class KinematicsHandler(ABC):
         self.name = name
         self.noise = noise
         self.alpha = alpha or [0.03, 0, 0, 0.03]
+        # Default velocity dimension; concrete handlers may override.
+        self.vel_dim = 2
 
     @abstractmethod
     def step(
@@ -50,6 +52,7 @@ class KinematicsHandler(ABC):
 class OmniKinematics(KinematicsHandler):
     def __init__(self, name, noise, alpha):
         super().__init__(name, noise, alpha)
+        self.vel_dim = 3
 
     def step(
         self, state: np.ndarray, velocity: np.ndarray, step_time: float
@@ -58,16 +61,13 @@ class OmniKinematics(KinematicsHandler):
 
         Args:
             state (np.ndarray): Current state [x, y, theta, ...].
-            velocity (np.ndarray): Velocity [vx, vy].
+            velocity (np.ndarray): Velocity [vx, vy, w] (w optional).
             step_time (float): Time step.
 
         Returns:
-            np.ndarray: New state (x, y updated; rest preserved).
+            np.ndarray: New state (x, y, theta updated; rest preserved).
         """
-        next_position = omni_kinematics(
-            state[0:2], velocity, step_time, self.noise, self.alpha
-        )
-        return np.concatenate((next_position, state[2:]))
+        return omni_kinematics(state, velocity, step_time, self.noise, self.alpha)
 
 
 class DifferentialKinematics(KinematicsHandler):

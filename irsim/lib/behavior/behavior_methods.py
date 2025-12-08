@@ -137,7 +137,16 @@ def beh_omni_dash(
     goal = ego_object.goal
     goal_threshold = ego_object.goal_threshold
     _, max_vel = ego_object.get_vel_range()
-    return OmniDash(state, goal, max_vel, goal_threshold)
+    yaw_rate_limit = kwargs.get("wmax", 1.5)
+    guarantee_time = kwargs.get("guarantee_time", 0.2)
+    return OmniDash(
+        state,
+        goal,
+        max_vel,
+        goal_threshold,
+        yaw_rate_limit=yaw_rate_limit,
+        guarantee_time=guarantee_time,
+    )
 
 
 @register_behavior("omni", "rvo")
@@ -177,8 +186,19 @@ def beh_omni_rvo(
     factor = kwargs.get("factor", 1.0)
     mode = kwargs.get("mode", "rvo")
     neighbor_threshold = kwargs.get("neighbor_threshold", 3.0)
+    yaw_rate_limit = kwargs.get("wmax", 1.5)
+    guarantee_time = kwargs.get("guarantee_time", 0.2)
     return OmniRVO(
-        rvo_state, rvo_neighbor, vxmax, vymax, acce, factor, mode, neighbor_threshold
+        rvo_state,
+        rvo_neighbor,
+        vxmax,
+        vymax,
+        acce,
+        factor,
+        mode,
+        neighbor_threshold,
+        yaw_rate_limit,
+        guarantee_time,
     )
 
 
@@ -224,6 +244,8 @@ def OmniRVO(
     factor: float = 1.0,
     mode: str = "rvo",
     neighbor_threshold: float = 3.0,
+    yaw_rate_limit: float = 1.5,
+    guarantee_time: float = 0.2,
 ) -> np.ndarray:
     """
     Calculate the omnidirectional velocity using RVO.
@@ -239,7 +261,7 @@ def OmniRVO(
         neighbor_threshold (float): Neighbor threshold (default 3.0).
 
     Returns:
-        np.array: Velocity [vx, vy] (2x1).
+        np.array: Velocity [vx, vy, w] (3x1) in robot frame.
     """
 
     if neighbor_list is None:
@@ -257,8 +279,23 @@ def OmniRVO(
         state_tuple, filtered_neighbor_list, vxmax, vymax, acce, factor
     )
     rvo_vel = rvo_behavior.cal_vel(mode)
+    world_vx, world_vy = rvo_vel[0], rvo_vel[1]
 
-    return np.array([[rvo_vel[0]], [rvo_vel[1]]])
+    theta = state_tuple[-1] if len(state_tuple) >= 8 else 0.0
+    cos_th, sin_th = np.cos(theta), np.sin(theta)
+    # world -> body
+    body_vx = cos_th * world_vx + sin_th * world_vy
+    body_vy = -sin_th * world_vx + cos_th * world_vy
+
+    speed = np.hypot(world_vx, world_vy)
+    if speed > 1e-6:
+        desired_heading = np.arctan2(world_vy, world_vx)
+        yaw_error = WrapToPi(desired_heading - theta)
+        w = np.clip(yaw_error / guarantee_time, -yaw_rate_limit, yaw_rate_limit)
+    else:
+        w = 0.0
+
+    return np.array([[body_vx], [body_vy], [w]])
 
 
 def DiffRVO(
@@ -310,6 +347,8 @@ def OmniDash(
     goal: np.ndarray,
     max_vel: np.ndarray,
     goal_threshold: float = 0.1,
+    yaw_rate_limit: float = 1.5,
+    guarantee_time: float = 0.2,
 ) -> np.ndarray:
     """
     Calculate the omnidirectional velocity to reach a goal.
@@ -321,18 +360,22 @@ def OmniDash(
         goal_threshold (float): Distance threshold to consider goal reached (default 0.1).
 
     Returns:
-        np.array: Velocity [vx, vy] (2x1).
+        np.array: Velocity [vx, vy, w] (3x1) in robot frame.
     """
     distance, radian = relative_position(state, goal)
+    theta = state[2, 0] if state.shape[0] >= 3 else 0.0
+    heading_error = WrapToPi(radian - theta)
 
     if distance > goal_threshold:
-        vx = max_vel[0, 0] * cos(radian)
-        vy = max_vel[1, 0] * sin(radian)
+        vx = max_vel[0, 0] * cos(heading_error)
+        vy = max_vel[1, 0] * sin(heading_error)
+        w = np.clip(heading_error / guarantee_time, -yaw_rate_limit, yaw_rate_limit)
     else:
         vx = 0
         vy = 0
+        w = 0
 
-    return np.array([[vx], [vy]])
+    return np.array([[vx], [vy], [w]])
 
 
 def DiffDash(

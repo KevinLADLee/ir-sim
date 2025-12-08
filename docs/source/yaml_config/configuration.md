@@ -475,7 +475,7 @@ All `robot` and `obstacle` entities in the simulation are configured as objects 
 ```{card} Kinematics Models
 :class-card: sd-bg-light sd-rounded-3
 - **`diff`** — Differential drive, controlled by linear speed and angular velocity (`[v, omega]`)
-- **`omni`** — Omnidirectional, controlled by linear speed along the x and y axes (`[vx, vy]`)
+- **`omni`** — Omnidirectional, controlled by linear speed along the x and y axes (and optional yaw rate, twist-style `[vx, vy, w]` in robot frame; `w` defaults to 0)
 - **`acker`** — Ackermann steering, controlled by linear speed and steering angle (`[v, phi]`)
 ```
 
@@ -492,9 +492,9 @@ All `robot` and `obstacle` entities in the simulation are configured as objects 
     kinematics: {name: 'diff', noise: True, alpha: [0.03, 0, 0, 0.03]}
     ```
 
-  - `'omni'`: Omnidirectional movement, allowing movement in any direction without changing orientation. This type of robot is controlled by velocities along the x and y axes. Optional parameters:
+  - `'omni'`: Omnidirectional movement, allowing movement in any direction without changing orientation. This type of robot is controlled by velocities along the x and y axes and can accept angular velocity (twist-style `[vx, vy, w]` in robot frame; `w` defaults to 0). Optional parameters:
     - `noise` (bool): whether to add noise to the velocity commands. Default is `False`.
-    - `alpha` (list): noise parameters for velocity commands. Default is `[0.03, 0, 0, 0.03]`.   
+    - `alpha` (list): noise parameters for velocity commands. Default is `[0.03, 0, 0, 0.03]` (if length >= 3, `alpha[2]` applies to `w`).   
 
     ```yaml
     # Example usage

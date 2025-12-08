@@ -238,7 +238,8 @@ class EnvBase:
                 Can be a single action or a list of actions. Action format depends on robot type:
 
                 - **Differential robot**: [linear_velocity, angular_velocity]
-                - **Omnidirectional robot**: [velocity_x, velocity_y]
+                - **Omnidirectional robot**: [velocity_x, velocity_y, angular_velocity]
+                    (vx, vy, w) expressed in the robot frame; vy defaults to 0 for diff/acker.
                 - **Ackermann robot**: [linear_velocity, steering_angle]
 
                 If None, robots will use their default behavior or keyboard control if enabled.

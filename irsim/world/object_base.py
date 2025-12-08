@@ -263,28 +263,53 @@ class ObjectBase:
         self.state_shape = (
             (self.state_dim, 1) if state_dim is not None else self.state_shape
         )
-        self.vel_dim = vel_dim if vel_dim is not None else self.vel_shape[0]
-        self.vel_shape = (self.vel_dim, 1) if vel_dim is not None else self.vel_shape
+        kf_vel_dim = getattr(self.kf, "vel_dim", None) if self.kf is not None else None
+        resolved_vel_dim = vel_dim if vel_dim is not None else kf_vel_dim
+        resolved_vel_dim = resolved_vel_dim if resolved_vel_dim is not None else self.vel_shape[0]
+        self.vel_dim = resolved_vel_dim
+        self.vel_shape = (self.vel_dim, 1)
+
+        def _pad_with_last(seq, target_len, default):
+            if seq is None:
+                seq = [default] * target_len
+            seq = list(seq)
+            if len(seq) < target_len:
+                fill_value = seq[-1] if seq else default
+                seq = seq + [fill_value] * (target_len - len(seq))
+            return seq[:target_len]
+
+        velocity = _pad_with_last(velocity, self.vel_dim, 0.0)
+        vel_min = _pad_with_last(vel_min, self.vel_dim, -1.0)
+        vel_max = _pad_with_last(vel_max, self.vel_dim, 1.0)
+        acce = _pad_with_last(acce, self.vel_dim, inf)
+
+        def _as_float(arr, label):
+            arr_np = np.asarray(arr, dtype=float)
+            if hasattr(arr, "dtype") and np.issubdtype(arr.dtype, np.integer):
+                self.logger.warning(
+                    f"{label} provided as integer; auto-casting to float to avoid truncation."
+                )
+            return arr_np
 
         self.role = role
 
-        state = self.input_state_check(state, self.state_dim)
+        state = _as_float(self.input_state_check(state, self.state_dim), "state")
         self._state = np.c_[state]
-        self._init_state = np.c_[state]
+        self._init_state = self._state.copy()
 
+        velocity = _as_float(velocity, "velocity")
         self._velocity = np.c_[velocity]
-        self._init_velocity = np.c_[velocity]
+        self._init_velocity = self._velocity.copy()
 
         self._name = name
 
         # Set goal points
-        self._goal = (
-            deque(goal)
-            if goal is not None and is_2d_list(goal)
-            else deque([goal])
-            if goal is not None
-            else None
-        )
+        if goal is not None and is_2d_list(goal):
+            self._goal = deque([_as_float(g, "goal") for g in goal])
+        elif goal is not None:
+            self._goal = deque([_as_float(goal, "goal")])
+        else:
+            self._goal = None
         self._goal_vertices = (
             vertices_transform(self.original_vertices, self.goal)
             if self.goal is not None
@@ -306,8 +331,8 @@ class ObjectBase:
 
         # information
         self.static = static if self.kf is not None else True
-        self.vel_min = np.c_[vel_min]
-        self.vel_max = np.c_[vel_max]
+        self.vel_min = np.c_[_as_float(vel_min, "vel_min")]
+        self.vel_max = np.c_[_as_float(vel_max, "vel_max")]
         self.color = color
 
         self.info = ObjectInfo(
@@ -604,9 +629,15 @@ class ObjectBase:
             )
 
         else:
-            velocity = to_numpy(velocity, expected_shape=self.vel_shape)
+            velocity_np = to_numpy(velocity)
+            if velocity_np.shape[0] < self.vel_shape[0]:
+                pad_rows = self.vel_shape[0] - velocity_np.shape[0]
+                velocity_np = np.vstack(
+                    (velocity_np, np.zeros((pad_rows, velocity_np.shape[1])))
+                )
+            velocity_np = velocity_np.reshape(self.vel_shape).astype(float)
 
-            behavior_vel = velocity
+            behavior_vel = velocity_np
 
         # clip the behavior_vel by maximum and minimum limits
         if (behavior_vel < (min_vel - 0.01)).any():
@@ -2420,7 +2451,7 @@ class ObjectBase:
             (2*1) np.ndarray: Velocity [vx, vy].
         """
         if self.kinematics == "omni":
-            return self.velocity
+            return self.velocity[:2]
         if self.kinematics == "diff" or self.kinematics == "acker":
             return diff_to_omni(self.state[2, 0], self.velocity)
         return np.zeros((2, 1))

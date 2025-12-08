@@ -2,8 +2,8 @@ import time
 
 import irsim
 
-env = irsim.make("robot_world.yaml")
-# env = irsim.make("robot_omni_world.yaml")
+# env = irsim.make("robot_world.yaml")
+env = irsim.make("robot_omni_world.yaml")
 # env = irsim.make('car_world.yaml')
 # env = irsim.make("robot_polygon_world.yaml")
 
