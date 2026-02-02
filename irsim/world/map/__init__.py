@@ -3,6 +3,7 @@ from typing import Optional
 import numpy as np
 
 from .obstacle_map import ObstacleMap
+from .perlin_map_generator import Perlin2dMap
 
 
 class Map:
@@ -34,4 +35,4 @@ class Map:
         self.grid = grid
 
 
-__all__ = ["Map", "ObstacleMap"]
+__all__ = ["Map", "ObstacleMap", "Perlin2dMap"]
