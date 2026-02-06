@@ -138,7 +138,11 @@ class World:
         Returns:
             tuple: ``(grid_map, obstacle_index, obstacle_positions)``.
         """
-        grid_map = resolve_obstacle_map(obstacle_map)
+        grid_map = resolve_obstacle_map(
+            obstacle_map,
+            world_width=self.width,
+            world_height=self.height,
+        )
 
         if grid_map is not None:
             grid_map = grid_map[::mdownsample, ::mdownsample]

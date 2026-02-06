@@ -5,48 +5,63 @@ import numpy as np
 from .grid_map_generator_base import GridMapGenerator
 from .image_map_generator import ImageGridGenerator
 from .obstacle_map import ObstacleMap
-from .perlin_map_generator import Perlin2dMap, PerlinGridGenerator
+from .perlin_map_generator import PerlinGridGenerator
 
 
 def resolve_obstacle_map(
     obstacle_map: Optional[Union[str, np.ndarray, Any]],
-) -> Optional[Union[np.ndarray, Any]]:
-    """Resolve obstacle_map to None, an ndarray, or an object with .grid.
+    world_width: Optional[float] = None,
+    world_height: Optional[float] = None,
+) -> Optional[np.ndarray]:
+    """Resolve obstacle_map to None or a float64 occupancy grid ndarray.
 
-    All type branching (path string, generator spec dict, etc.) lives here.
-    World and EnvConfig can pass the result through; only this module
-    decides how to interpret strings and dicts.
+    Generator specs (dict with ``name``) require ``world_width`` and
+    ``world_height``; grid size is computed from world size and ``resolution``.
 
     Returns:
-        None, or ndarray (0-100 grid), or object with .grid attribute.
+        None, or ndarray (0-100 grid, dtype float64).
     """
     if obstacle_map is None:
         return None
     if isinstance(obstacle_map, np.ndarray):
-        return obstacle_map
+        return np.asarray(obstacle_map, dtype=np.float64)
     if isinstance(obstacle_map, str):
-        return ImageGridGenerator(path=obstacle_map).generate()
+        gen = ImageGridGenerator(path=obstacle_map).generate()
+        return np.asarray(gen.grid, dtype=np.float64)
     if isinstance(obstacle_map, dict) and obstacle_map.get("name"):
-        return build_grid_from_generator(obstacle_map)
-    if hasattr(obstacle_map, "grid"):
-        return obstacle_map
-    return None
+        if world_width is None or world_height is None:
+            raise ValueError(
+                "obstacle_map generator spec requires world_width and "
+                "world_height (passed by World.gen_grid_map)."
+            )
+        return build_grid_from_generator(
+            obstacle_map,
+            world_width=world_width,
+            world_height=world_height,
+        )
+    raise TypeError(
+        "obstacle_map must be None, a path string, an ndarray, or a generator "
+        "spec dict with 'name' and 'resolution'."
+    )
 
 
-def build_grid_from_generator(spec: dict[str, Any]) -> Any:
-    """Build a grid map from a YAML grid_generator spec (name + variable params).
+def build_grid_from_generator(
+    spec: dict[str, Any],
+    world_width: float,
+    world_height: float,
+) -> np.ndarray:
+    """Build a grid map from a YAML grid_generator spec (name + resolution + params).
 
-    The spec must have ``name`` (e.g. ``perlin``) to select the generator;
-    all other keys are passed as constructor params (filtered by the
-    generator's ``yaml_param_names``). The returned object has a ``.grid``
-    attribute and can be passed as ``obstacle_map`` to
-    :py:class:`irsim.world.world.World`.
+    Grid size is always computed from world size and ``resolution`` (meters per
+    cell): (world_width / resolution, world_height / resolution) cells.
 
     Args:
-        spec: Dict from YAML, e.g. ``{name: perlin, width: 200, height: 200, ...}``.
+        spec: Dict from YAML, e.g. ``{name: perlin, resolution: 0.1, ...}``.
+        world_width: World width in meters.
+        world_height: World height in meters.
 
     Returns:
-        Generator instance with ``.generate()`` called (has ``.grid``).
+        Occupancy grid (0-100) as float64 ndarray.
     """
     name = spec.get("name")
     if not name or name not in GridMapGenerator.registry:
@@ -54,13 +69,24 @@ def build_grid_from_generator(spec: dict[str, Any]) -> Any:
         raise ValueError(
             f"Unknown or missing grid_generator name: {name!r}. Known: {known}"
         )
+    resolution = spec.get("resolution")
+    if resolution is None:
+        raise ValueError(
+            "obstacle_map generator spec must include 'resolution' (meters per cell)."
+        )
+    grid_width = max(1, round(float(world_width) / float(resolution)))
+    grid_height = max(1, round(float(world_height) / float(resolution)))
+
     cls = GridMapGenerator.registry[name]
     params = {
         k: v
         for k, v in spec.items()
-        if k != "name" and k in cls.yaml_param_names
+        if k not in ("name", "resolution") and k in cls.yaml_param_names
     }
-    return cls(**params).generate()
+    params["width"] = grid_width
+    params["height"] = grid_height
+
+    return np.asarray(cls(**params).generate().grid, dtype=np.float64)
 
 
 class Map:
@@ -93,12 +119,11 @@ class Map:
 
 
 __all__ = [
+    "GridMapGenerator",
+    "ImageGridGenerator",
     "Map",
     "ObstacleMap",
-    "Perlin2dMap",
     "PerlinGridGenerator",
-    "ImageGridGenerator",
-    "GridMapGenerator",
     "build_grid_from_generator",
     "resolve_obstacle_map",
 ]

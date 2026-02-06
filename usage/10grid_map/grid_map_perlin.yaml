@@ -11,8 +11,7 @@ world:
   mdownsample: 1
   obstacle_map:
     name: perlin
-    width: 200   # grid cells (map resolution)
-    height: 200
+    resolution: 0.1   # m/cell; grid size = world size / resolution (20/0.1 = 200 per axis)
     complexity: 0.12
     fill: 0.32
     fractal: 1

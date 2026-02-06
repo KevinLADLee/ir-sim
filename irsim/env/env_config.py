@@ -80,15 +80,8 @@ class EnvConfig:
             )
 
     def _world_kwargs(self) -> dict[str, Any]:
-        """Build world constructor kwargs from the ``world`` section.
-
-        Grid source is a single parameter: ``obstacle_map`` (path string,
-        dict spec e.g. ``{ name: perlin, ... }``, or null). Any unknown key
-        such as ``grid_generator`` is dropped so it is not passed to World.
-        """
-        kw = dict(self.parse["world"])
-        kw.pop("grid_generator", None)
-        return kw
+        """World constructor kwargs from the ``world`` section."""
+        return dict(self.parse["world"])
 
     def initialize_objects(self) -> Any:
         """Construct world, objects and plot from the current parsed config.

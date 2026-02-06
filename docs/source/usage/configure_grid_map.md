@@ -87,7 +87,7 @@ obstacle:
 To configure the grid map environment, use the single key **obstacle_map** in the `world` section:
 
 1. **Default — image file**: Set `obstacle_map` to a path string (e.g. `'cave.png'`). This uses the image generator internally; existing YAMLs need no change. The `mdownsample` parameter downsamples the grid for acceleration.
-2. **Procedural / other generators**: Set `obstacle_map` to an object with `name` and parameters. Example (Perlin):
+2. **Procedural / other generators**: Set `obstacle_map` to an object with `name` and `resolution` (meters per cell). Grid size is computed from the world `width` and `height` (e.g. world 20×20 m with `resolution: 0.1` → 200×200 cells).
 
    ```yaml
    world:
@@ -96,8 +96,7 @@ To configure the grid map environment, use the single key **obstacle_map** in th
      mdownsample: 1
      obstacle_map:
        name: perlin
-       width: 200
-       height: 200
+       resolution: 0.1   # 20 m / 0.1 = 200 cells per axis
        complexity: 0.12
        fill: 0.32
        fractal: 1

@@ -188,15 +188,7 @@ class PerlinGridGenerator(GridMapGenerator):
     """
 
     name = "perlin"
-    yaml_param_names = (
-        "width",
-        "height",
-        "complexity",
-        "fill",
-        "fractal",
-        "attenuation",
-        "seed",
-    )
+    yaml_param_names = ("complexity", "fill", "fractal", "attenuation", "seed")
 
     def __init__(
         self,
@@ -251,10 +243,6 @@ class PerlinGridGenerator(GridMapGenerator):
     ) -> None:
         """Preview the grid with matplotlib."""
         super().preview(title=title, cmap=cmap)
-
-
-# Backward compatibility alias
-Perlin2dMap = PerlinGridGenerator
 
 
 if __name__ == "__main__":

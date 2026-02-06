@@ -203,7 +203,7 @@ This section outlines the configuration parameters available for the `world` sec
 : Single parameter for the occupancy grid. It accepts:
 
   - **Image path** (e.g. `'cave.png'`): Path to an image file. Each pixel corresponds to a grid cell; pixel color determines obstacle presence. See [Configure grid map](usage/configure_grid_map).
-  - **Generator spec** (dict with `name` and parameters): Procedural grid, e.g. `{ name: perlin, width: 200, height: 200, ... }`.
+  - **Generator spec** (dict with `name` and `resolution`): Procedural grid. Grid size is derived from world `width`/`height` and `resolution` (meters per cell). E.g. `{ name: perlin, resolution: 0.1, ... }`.
   - **`null`**: No obstacle map (empty world).
 
   **Available Maps**: We provide some example maps in the `irsim/world/map` folder and you can also use your own map by 3D datasets like [HM3D](https://aihabitat.org/datasets/hm3d/), [MatterPort3D](https://niessner.github.io/Matterport/), [Gibson](http://gibsonenv.stanford.edu/database/), etc. See [here](https://github.com/hanruihua/ir-sim/tree/features/irsim/world/map/binary_map_generator_hm3d) for more details.
@@ -212,11 +212,10 @@ This section outlines the configuration parameters available for the `world` sec
   # Image path
   obstacle_map: 'hm3d_2.png'
 
-  # Or procedural generator (same world key)
+  # Procedural generator (grid size = world size / resolution)
   obstacle_map:
     name: perlin
-    width: 200
-    height: 200
+    resolution: 0.1
     complexity: 0.12
     fill: 0.32
     seed: 48

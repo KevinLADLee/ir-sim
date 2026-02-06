@@ -2,7 +2,7 @@
 Tests for grid map generators, resolve_obstacle_map, and build_grid_from_generator.
 
 Covers:
-- Perlin2dMap / PerlinGridGenerator (+ generate_perlin_noise internals)
+- PerlinGridGenerator (+ generate_perlin_noise internals)
 - resolve_obstacle_map: the single-point resolution dispatch
 - build_grid_from_generator: YAML spec -> ndarray
 - ImageGridGenerator: image-file based grid loading
@@ -17,7 +17,6 @@ import pytest
 from irsim.world.map import (
     GridMapGenerator,
     ImageGridGenerator,
-    Perlin2dMap,
     PerlinGridGenerator,
     build_grid_from_generator,
     resolve_obstacle_map,
@@ -25,41 +24,41 @@ from irsim.world.map import (
 from irsim.world.map.perlin_map_generator import generate_perlin_noise
 
 
-class TestPerlin2dMap:
-    """Tests for Perlin2dMap."""
+class TestPerlinGridGenerator:
+    """Tests for PerlinGridGenerator."""
 
-    def test_perlin2dmap_generate_returns_self(self):
+    def test_perlin_generate_returns_self(self):
         """Test that generate() returns self for chaining."""
-        pmap = Perlin2dMap(50, 50, seed=42)
+        pmap = PerlinGridGenerator(50, 50, seed=42)
         out = pmap.generate()
         assert out is pmap
 
-    def test_perlin2dmap_grid_shape(self):
-        """Test that Perlin2dMap.grid has correct shape."""
-        pmap = Perlin2dMap(100, 80, seed=42).generate()
+    def test_perlin_grid_shape(self):
+        """Test that PerlinGridGenerator.grid has correct shape."""
+        pmap = PerlinGridGenerator(100, 80, seed=42).generate()
         assert pmap.grid.shape == (100, 80)
 
-    def test_perlin2dmap_grid_lazy(self):
+    def test_perlin_grid_lazy(self):
         """Test that accessing .grid triggers generation if not yet built."""
-        pmap = Perlin2dMap(50, 50, seed=42)
+        pmap = PerlinGridGenerator(50, 50, seed=42)
         assert pmap._grid is None
         grid = pmap.grid
         assert grid.shape == (50, 50)
         assert pmap._grid is not None
 
-    def test_perlin2dmap_save_as_image(self):
+    def test_perlin_save_as_image(self):
         """Test that save_as_image creates a file."""
-        pmap = Perlin2dMap(50, 50, seed=42).generate()
+        pmap = PerlinGridGenerator(50, 50, seed=42).generate()
         with tempfile.TemporaryDirectory() as tmpdir:
             filepath = os.path.join(tmpdir, "perlin2d.png")
             pmap.save_as_image(filepath)
             assert os.path.exists(filepath)
             assert os.path.getsize(filepath) > 0
 
-    def test_perlin2dmap_same_params_same_grid(self):
+    def test_perlin_same_params_same_grid(self):
         """Test that same params produce identical grid."""
-        pmap1 = Perlin2dMap(100, 100, fill=0.38, seed=42).generate()
-        pmap2 = Perlin2dMap(100, 100, fill=0.38, seed=42).generate()
+        pmap1 = PerlinGridGenerator(100, 100, fill=0.38, seed=42).generate()
+        pmap2 = PerlinGridGenerator(100, 100, fill=0.38, seed=42).generate()
         np.testing.assert_array_equal(pmap1.grid, pmap2.grid)
 
 
@@ -91,22 +90,22 @@ class TestPerlinNoiseGeneration:
 
 
 class TestPerlinMapGeneration:
-    """Tests for Perlin2dMap grid generation."""
+    """Tests for PerlinGridGenerator grid generation."""
 
     def test_generate_map_shape(self):
         """Test that map has correct shape."""
-        grid = Perlin2dMap(100, 80).generate().grid
+        grid = PerlinGridGenerator(100, 80).generate().grid
         assert grid.shape == (100, 80)
 
     def test_generate_map_value_range(self):
         """Test that map values are in [0, 100] range."""
-        grid = Perlin2dMap(100, 100, seed=42).generate().grid
+        grid = PerlinGridGenerator(100, 100, seed=42).generate().grid
         assert grid.min() >= 0
         assert grid.max() <= 100
 
     def test_generate_map_binary_like(self):
         """Test that map is binary-like (0 or 100 values only)."""
-        grid = Perlin2dMap(100, 100, seed=42).generate().grid
+        grid = PerlinGridGenerator(100, 100, seed=42).generate().grid
         unique_values = np.unique(grid)
         assert len(unique_values) == 2
         assert 0.0 in unique_values
@@ -114,8 +113,8 @@ class TestPerlinMapGeneration:
 
     def test_map_seed_reproducibility(self):
         """Test that same seed produces identical maps."""
-        grid1 = Perlin2dMap(50, 50, seed=42).generate().grid
-        grid2 = Perlin2dMap(50, 50, seed=42).generate().grid
+        grid1 = PerlinGridGenerator(50, 50, seed=42).generate().grid
+        grid2 = PerlinGridGenerator(50, 50, seed=42).generate().grid
         np.testing.assert_array_equal(grid1, grid2)
 
 
@@ -124,8 +123,8 @@ class TestFillParameter:
 
     def test_fill_affects_obstacle_ratio(self):
         """Test that higher fill produces more obstacles."""
-        grid_low = Perlin2dMap(100, 100, fill=0.3, seed=42).generate().grid
-        grid_high = Perlin2dMap(100, 100, fill=0.7, seed=42).generate().grid
+        grid_low = PerlinGridGenerator(100, 100, fill=0.3, seed=42).generate().grid
+        grid_high = PerlinGridGenerator(100, 100, fill=0.7, seed=42).generate().grid
 
         obstacles_low = np.sum(grid_low > 50)
         obstacles_high = np.sum(grid_high > 50)
@@ -134,19 +133,19 @@ class TestFillParameter:
 
     def test_fill_matches_obstacle_ratio(self):
         """Test that fill=0.38 produces ~38% obstacles."""
-        grid = Perlin2dMap(100, 100, fill=0.38, seed=42).generate().grid
+        grid = PerlinGridGenerator(100, 100, fill=0.38, seed=42).generate().grid
         obstacle_ratio = np.sum(grid > 50) / grid.size
         assert 0.36 <= obstacle_ratio <= 0.40
 
     def test_extreme_fill_high(self):
         """Test high fill creates mostly obstacles."""
-        grid = Perlin2dMap(100, 100, fill=0.9, seed=42).generate().grid
+        grid = PerlinGridGenerator(100, 100, fill=0.9, seed=42).generate().grid
         obstacle_ratio = np.sum(grid > 50) / grid.size
         assert obstacle_ratio > 0.85
 
     def test_extreme_fill_low(self):
         """Test low fill creates mostly free space."""
-        grid = Perlin2dMap(100, 100, fill=0.1, seed=42).generate().grid
+        grid = PerlinGridGenerator(100, 100, fill=0.1, seed=42).generate().grid
         obstacle_ratio = np.sum(grid > 50) / grid.size
         assert obstacle_ratio < 0.15
 
@@ -156,8 +155,8 @@ class TestComplexityParameter:
 
     def test_complexity_affects_feature_size(self):
         """Test that different complexity produces different patterns."""
-        grid_small = Perlin2dMap(100, 100, complexity=0.02, seed=42).generate().grid
-        grid_large = Perlin2dMap(100, 100, complexity=0.2, seed=42).generate().grid
+        grid_small = PerlinGridGenerator(100, 100, complexity=0.02, seed=42).generate().grid
+        grid_large = PerlinGridGenerator(100, 100, complexity=0.2, seed=42).generate().grid
 
         assert not np.array_equal(grid_small, grid_large)
 
@@ -167,8 +166,8 @@ class TestFractalParameter:
 
     def test_fractal_affects_detail(self):
         """Test that more fractal layers add more detail."""
-        grid_few = Perlin2dMap(100, 100, fractal=1, seed=42).generate().grid
-        grid_many = Perlin2dMap(100, 100, fractal=6, seed=42).generate().grid
+        grid_few = PerlinGridGenerator(100, 100, fractal=1, seed=42).generate().grid
+        grid_many = PerlinGridGenerator(100, 100, fractal=6, seed=42).generate().grid
 
         assert not np.array_equal(grid_few, grid_many)
 
@@ -178,7 +177,7 @@ class TestSaveMapAsImage:
 
     def test_save_creates_file(self):
         """Test that save_as_image creates a file."""
-        pmap = Perlin2dMap(50, 50, seed=42).generate()
+        pmap = PerlinGridGenerator(50, 50, seed=42).generate()
         with tempfile.TemporaryDirectory() as tmpdir:
             filepath = os.path.join(tmpdir, "test_map.png")
             pmap.save_as_image(filepath)
@@ -186,7 +185,7 @@ class TestSaveMapAsImage:
 
     def test_save_file_not_empty(self):
         """Test that saved file has content."""
-        pmap = Perlin2dMap(50, 50, seed=42).generate()
+        pmap = PerlinGridGenerator(50, 50, seed=42).generate()
         with tempfile.TemporaryDirectory() as tmpdir:
             filepath = os.path.join(tmpdir, "test_map.png")
             pmap.save_as_image(filepath)
@@ -194,7 +193,7 @@ class TestSaveMapAsImage:
 
     def test_save_invert_option(self):
         """Test that invert option works."""
-        pmap = Perlin2dMap(50, 50, seed=42).generate()
+        pmap = PerlinGridGenerator(50, 50, seed=42).generate()
         with tempfile.TemporaryDirectory() as tmpdir:
             filepath_normal = os.path.join(tmpdir, "normal.png")
             filepath_inverted = os.path.join(tmpdir, "inverted.png")
@@ -209,22 +208,22 @@ class TestEdgeCases:
 
     def test_small_map(self):
         """Test generation of very small map."""
-        grid = Perlin2dMap(10, 10, seed=42).generate().grid
+        grid = PerlinGridGenerator(10, 10, seed=42).generate().grid
         assert grid.shape == (10, 10)
 
     def test_non_square_map(self):
         """Test generation of non-square map."""
-        grid = Perlin2dMap(50, 100, seed=42).generate().grid
+        grid = PerlinGridGenerator(50, 100, seed=42).generate().grid
         assert grid.shape == (50, 100)
 
     def test_single_fractal(self):
         """Test generation with single fractal layer."""
-        grid = Perlin2dMap(50, 50, fractal=1, seed=42).generate().grid
+        grid = PerlinGridGenerator(50, 50, fractal=1, seed=42).generate().grid
         assert grid.shape == (50, 50)
 
     def test_many_fractal(self):
         """Test generation with many fractal layers."""
-        grid = Perlin2dMap(50, 50, fractal=8, seed=42).generate().grid
+        grid = PerlinGridGenerator(50, 50, fractal=8, seed=42).generate().grid
         assert grid.shape == (50, 50)
 
 
@@ -249,29 +248,32 @@ class TestResolveObstacleMap:
         np.testing.assert_array_equal(result, arr.astype(np.float64))
 
     def test_dict_spec_perlin(self):
-        """A dict with name='perlin' builds an ndarray via the registry."""
-        spec = {"name": "perlin", "width": 30, "height": 30, "seed": 7}
-        result = resolve_obstacle_map(spec)
+        """A dict with name='perlin' and resolution builds ndarray when world size is passed."""
+        spec = {"name": "perlin", "resolution": 1.0, "seed": 7}
+        result = resolve_obstacle_map(
+            spec, world_width=30.0, world_height=30.0
+        )
         assert isinstance(result, np.ndarray)
         assert result.shape == (30, 30)
         assert result.dtype == np.float64
 
-    def test_object_with_grid_attribute(self):
-        """An object with .grid is resolved to its grid ndarray."""
-        gen = Perlin2dMap(20, 20, seed=1).generate()
-        result = resolve_obstacle_map(gen)
-        assert isinstance(result, np.ndarray)
-        assert result.dtype == np.float64
-        np.testing.assert_array_equal(result, gen.grid)
+    def test_dict_spec_without_world_raises(self):
+        """resolve_obstacle_map with generator spec but no world dimensions raises."""
+        spec = {"name": "perlin", "resolution": 0.1, "seed": 7}
+        with pytest.raises(ValueError, match="world_width"):
+            resolve_obstacle_map(spec)
 
-    def test_unknown_input_returns_none(self):
-        """Unrecognised types return None."""
-        assert resolve_obstacle_map(12345) is None
-        assert resolve_obstacle_map([1, 2, 3]) is None
+    def test_unknown_input_raises(self):
+        """Unrecognised types raise TypeError."""
+        with pytest.raises(TypeError, match="obstacle_map must be"):
+            resolve_obstacle_map(12345)
+        with pytest.raises(TypeError, match="obstacle_map must be"):
+            resolve_obstacle_map([1, 2, 3])
 
-    def test_dict_without_name_returns_none(self):
-        """A dict missing the 'name' key returns None."""
-        assert resolve_obstacle_map({"width": 10}) is None
+    def test_dict_without_name_raises(self):
+        """A dict missing the 'name' key raises TypeError."""
+        with pytest.raises(TypeError, match="obstacle_map must be"):
+            resolve_obstacle_map({"width": 10})
 
 
 # ---------------------------------------------------------------------------
@@ -283,9 +285,11 @@ class TestBuildGridFromGenerator:
     """Tests for build_grid_from_generator."""
 
     def test_builds_perlin_grid(self):
-        """Correctly builds an ndarray from a perlin spec."""
-        spec = {"name": "perlin", "width": 40, "height": 40, "seed": 99}
-        grid = build_grid_from_generator(spec)
+        """Correctly builds an ndarray from a perlin spec with resolution and world size."""
+        spec = {"name": "perlin", "resolution": 0.1, "seed": 99}
+        grid = build_grid_from_generator(
+            spec, world_width=4.0, world_height=4.0
+        )
         assert isinstance(grid, np.ndarray)
         assert grid.shape == (40, 40)
         assert grid.dtype == np.float64
@@ -293,24 +297,55 @@ class TestBuildGridFromGenerator:
     def test_unknown_name_raises(self):
         """Raises ValueError for an unregistered generator name."""
         with pytest.raises(ValueError, match="Unknown"):
-            build_grid_from_generator({"name": "nonexistent_generator"})
+            build_grid_from_generator(
+                {"name": "nonexistent_generator", "resolution": 0.1},
+                world_width=10.0,
+                world_height=10.0,
+            )
 
     def test_missing_name_raises(self):
         """Raises ValueError when name key is absent."""
         with pytest.raises(ValueError, match="Unknown"):
-            build_grid_from_generator({"width": 10})
+            build_grid_from_generator(
+                {"resolution": 0.1}, world_width=10.0, world_height=10.0
+            )
+
+    def test_missing_resolution_raises(self):
+        """Raises ValueError when resolution is absent in spec."""
+        with pytest.raises(ValueError, match="resolution"):
+            build_grid_from_generator(
+                {"name": "perlin", "seed": 1},
+                world_width=10.0,
+                world_height=10.0,
+            )
 
     def test_extra_keys_ignored(self):
         """Keys not in yaml_param_names are silently ignored."""
         spec = {
             "name": "perlin",
-            "width": 20,
-            "height": 20,
+            "resolution": 0.1,
             "seed": 1,
             "unknown_param": 999,
         }
-        grid = build_grid_from_generator(spec)
+        grid = build_grid_from_generator(
+            spec, world_width=2.0, world_height=2.0
+        )
         assert grid.shape == (20, 20)
+
+    def test_resolution_computes_grid_from_world_size(self):
+        """Grid size = world size / resolution."""
+        spec = {
+            "name": "perlin",
+            "resolution": 0.1,
+            "seed": 42,
+            "complexity": 0.12,
+            "fill": 0.32,
+        }
+        grid = build_grid_from_generator(
+            spec, world_width=20.0, world_height=15.0
+        )
+        assert grid.shape == (200, 150)
+        assert grid.dtype == np.float64
 
     def test_perlin_registered(self):
         """PerlinGridGenerator is auto-registered under 'perlin'."""

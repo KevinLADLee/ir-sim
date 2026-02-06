@@ -24,8 +24,8 @@ import random
 from typing import Optional
 
 import matplotlib.pyplot as plt
-from matplotlib.patches import Polygon as MplPolygon
 import numpy as np
+from matplotlib.patches import Polygon as MplPolygon
 
 from irsim.lib.path_planners.rrt_star import RRTStar
 from irsim.world.map import Map
@@ -115,7 +115,7 @@ class InformedRRTStar(RRTStar):
                 during planning.
 
         Returns:
-            2×N ``ndarray`` of (x, y) waypoints, or *None* if no path was found.
+            2xN ``ndarray`` of (x, y) waypoints, or *None* if no path was found.
         """
         self.start = self.Node(start_pose[0].item(), start_pose[1].item())
         self.end = self.Node(goal_pose[0].item(), goal_pose[1].item())
@@ -371,6 +371,6 @@ class InformedRRTStar(RRTStar):
 
     @staticmethod
     def _path_cost(path: np.ndarray) -> float:
-        """Total Euclidean length of a 2×N path array."""
+        """Total Euclidean length of a 2xN path array."""
         diffs = np.diff(path, axis=1)
         return float(np.sum(np.hypot(diffs[0], diffs[1])))
