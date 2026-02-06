@@ -406,13 +406,13 @@ class TestRNGIsolation:
         from irsim.util.random import rng
 
         # Sample from global rng, then run perlin with a seed, then sample again
-        rng_state_before = rng.random()
+        rng.random()
         _ = generate_perlin_noise(30, 30, seed=42)
         rng_state_after = rng.random()
 
         # If perlin mutated global rng via set_seed, the second sample
         # would be deterministic (always the same). Run a second time:
-        rng_state_before2 = rng.random()
+        rng.random()
         _ = generate_perlin_noise(30, 30, seed=42)
         rng_state_after2 = rng.random()
 
