@@ -15,7 +15,12 @@ Reference:
     Sampling of an Admissible Ellipsoidal Heuristic," in Proc. IEEE/RSJ
     Int. Conf. Intelligent Robots and Systems (IROS), 2014.
 
-adapted for ir-sim
+Implementation reference:
+    ZJU-FAST-Lab/sampling-based-path-finding
+    https://github.com/ZJU-FAST-Lab/sampling-based-path-finding
+    (C++ implementation of RRT* with informed sampling and ellipsoidal heuristic.)
+
+Adapted for ir-sim.
 
 """
 
@@ -83,7 +88,7 @@ class InformedRRTStar(RRTStar):
         self._best_path: Optional[np.ndarray] = None
         self._c_min: float = 0.0
         self._x_center: np.ndarray = np.zeros(2)
-        self._C: np.ndarray = np.eye(2)
+        self._rotation_matrix: np.ndarray = np.eye(2)
 
         # -- visualisation (persistent artists, updated via set_data) --
         self._tree_line = None          # single Line2D for all tree edges
@@ -131,7 +136,7 @@ class InformedRRTStar(RRTStar):
         theta = math.atan2(
             self.end.y - self.start.y, self.end.x - self.start.x
         )
-        self._C = np.array(
+        self._rotation_matrix = np.array(
             [[math.cos(theta), -math.sin(theta)],
              [math.sin(theta),  math.cos(theta)]]
         )
@@ -244,7 +249,7 @@ class InformedRRTStar(RRTStar):
         x_ball = np.array([r * math.cos(ang), r * math.sin(ang)])
 
         # scale → rotate → translate
-        sample = self._C @ np.array([a * x_ball[0], b * x_ball[1]]) + self._x_center
+        sample = self._rotation_matrix @ np.array([a * x_ball[0], b * x_ball[1]]) + self._x_center
 
         # clamp to play area
         sample[0] = max(self.play_area.xmin, min(sample[0], self.play_area.xmax))
@@ -347,7 +352,7 @@ class InformedRRTStar(RRTStar):
         t = np.linspace(0, 2 * np.pi, 80)
         x_ell = a * np.cos(t)
         y_ell = b * np.sin(t)
-        pts = self._C @ np.vstack([x_ell, y_ell]) + self._x_center[:, None]
+        pts = self._rotation_matrix @ np.vstack([x_ell, y_ell]) + self._x_center[:, None]
         xy = pts.T  # (N, 2)
 
         if self._ellipse_line is None:
