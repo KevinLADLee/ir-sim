@@ -24,7 +24,7 @@ planner = InformedRRTStar(
     env_map,
     robot_radius=0.3,
     expand_dis=1.5,
-    max_iter=1500,
+    max_iter=2500,
     connect_circle_dist=50.0,
     search_until_max_iter=True,
 )

@@ -1,8 +1,11 @@
 """
-Example: RRT* path planning on the world occupancy map.
+Example: RRT* path planning.
 
-Loads a world from YAML, builds the map, plans a path from robot state to goal
-using RRT*, then draws the trajectory and shows the result.
+RRT* **optimises** path cost: it chooses the best parent in a neighbourhood
+(choose-parent) and rewires nearby nodes through the new node to shorten paths.
+Result is typically a shorter, smoother path than basic RRT.
+
+Compare with path_planning_rrt.py to see the difference in path length/cost.
 """
 
 import numpy as np
@@ -17,7 +20,7 @@ planner = RRTStar(
     env_map,
     robot_radius=0.3,
     expand_dis=1.5,
-    max_iter=1500,
+    max_iter=2000,
     search_until_max_iter=False,
 )
 
@@ -26,7 +29,10 @@ robot_info = env.get_robot_info()
 trajectory = planner.planning(robot_state, robot_info.goal, show_animation=True)
 
 if trajectory is not None:
-    # RRT* returns (rx, ry); draw_trajectory expects (2, n) array
     env.draw_trajectory(np.array(trajectory), traj_type="r-")
+    # RRT* already logs path cost in planner.planning(); print for quick comparison
+    print(f"[RRT*] path cost = {planner.end.cost:.3f}, tree nodes = {len(planner.node_list)}")
+else:
+    print("[RRT*] no feasible path found")
 
 env.end(5)

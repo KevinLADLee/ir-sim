@@ -17,4 +17,11 @@ from irsim.lib.path_planners.probabilistic_road_map import PRMPlanner
 from irsim.lib.path_planners.rrt import RRT
 from irsim.lib.path_planners.rrt_star import RRTStar
 
-__all__ = ["RRT", "AStarPlanner", "InformedRRTStar", "JPSPlanner", "PRMPlanner", "RRTStar"]
+__all__ = [
+    "AStarPlanner",
+    "InformedRRTStar",
+    "JPSPlanner",
+    "PRMPlanner",
+    "RRT",
+    "RRTStar",
+]
