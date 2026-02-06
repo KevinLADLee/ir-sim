@@ -1,6 +1,9 @@
 """
+A* grid planning.
 
-A* grid planning
+Collision precedence:
+  1. Grid lookup (O(1) per cell) when ``env_map.grid`` is not ``None``.
+  2. Shapely geometry intersection when the grid is unavailable.
 
 author: Atsushi Sakai(@Atsushi_twi)
         Nikos Kanargias (nkana@tee.gr)
@@ -8,8 +11,9 @@ author: Atsushi Sakai(@Atsushi_twi)
 adapted by: Reinis Cimurs
 
 See Wikipedia article (https://en.wikipedia.org/wiki/A*_search_algorithm)
-
 """
+
+from __future__ import annotations
 
 import math
 
@@ -18,19 +22,21 @@ import numpy as np
 import shapely
 
 from irsim.lib.handler.geometry_handler import GeometryFactory
-from irsim.world.map import Map
+from irsim.world.map import EnvGridMap
 
 
 class AStarPlanner:
-    def __init__(self, env_map: Map) -> None:
+    def __init__(self, env_map: EnvGridMap) -> None:
         """
         Initialize A* planner.
 
         Args:
-            env_map (Map): Environment map where planning takes place.
+            env_map: Environment map (any :class:`~irsim.world.map.EnvGridMap`
+                compatible object).
         """
 
-        self.resolution = env_map.resolution # m/cell
+        self._map = env_map
+        self.resolution = env_map.resolution  # m/cell
         self.obstacle_list = env_map.obstacle_list[:]
         self.min_x, self.min_y = 0, 0
         self.max_x, self.max_y = (
@@ -127,7 +133,7 @@ class AStarPlanner:
                 # for stopping simulation with the esc key.
                 plt.gcf().canvas.mpl_connect(
                     "key_release_event",
-                    lambda event: [exit(0) if event.key == "escape" else None],
+                    lambda event: plt.close(event.canvas.figure) if event.key == "escape" else None,
                 )
                 if len(closed_set.keys()) % 10 == 0:
                     plt.pause(0.001)
@@ -260,17 +266,25 @@ class AStarPlanner:
         # collision check
         return not self.check_node(px, py)
 
-    def check_node(self, x: int, y: int) -> bool:
-        """
-        Check positon for a collision
+    def check_node(self, x: float, y: float) -> bool:
+        """Check position for a collision.
+
+        Delegates to :meth:`Map.grid_occupied` when a grid is present;
+        falls back to Shapely intersection otherwise.
 
         Args:
-            x (float): x value of the position
-            y (float): y value of the position
+            x: World x coordinate of the cell centre.
+            y: World y coordinate of the cell centre.
 
         Returns:
-            result (bool): True if there is a collision. False otherwise
+            ``True`` if a collision is detected.
         """
+        result = self._map.grid_occupied(
+            x, y, margin_x=self.resolution, margin_y=self.resolution,
+        )
+        if result is not None:
+            return result
+        # Shapely fallback
         node_position = [x, y]
         shape = {
             "name": "rectangle",

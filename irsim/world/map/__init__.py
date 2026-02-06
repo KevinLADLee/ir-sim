@@ -1,4 +1,7 @@
-from typing import Any, Optional
+from __future__ import annotations
+
+import warnings
+from typing import Any, Optional, Protocol, runtime_checkable
 
 import numpy as np
 
@@ -8,6 +11,48 @@ from .obstacle_map import ObstacleMap
 from .perlin_map_generator import PerlinGridGenerator
 
 
+# ---------------------------------------------------------------------------
+# Typed protocol – structural contract expected by all path planners
+# ---------------------------------------------------------------------------
+
+
+@runtime_checkable
+class EnvGridMap(Protocol):
+    """Structural type accepted by all path planners.
+
+    Any object that exposes the attributes below (including :class:`Map`)
+    is a valid ``EnvGridMap``.  Planners should annotate their *env_map*
+    parameter with this protocol instead of the concrete :class:`Map`
+    class to support duck-typed map objects.
+
+    Collision precedence (adopted by every planner):
+      1. Grid lookup (O(1) per cell) when *grid* is not ``None``.
+      2. Shapely geometry intersection when *grid* is unavailable.
+    """
+
+    width: float
+    height: float
+    resolution: float
+    obstacle_list: list
+    grid: np.ndarray | None
+
+    @property
+    def grid_resolution(self) -> tuple[float, float] | None:
+        """Actual cell size ``(x_reso, y_reso)`` derived from *grid* shape and world size."""
+        ...
+
+    def grid_occupied(
+        self,
+        x: float,
+        y: float,
+        margin_x: float = 0.0,
+        margin_y: float = 0.0,
+        threshold: float = 50.0,
+    ) -> bool | None:
+        """Check if any grid cell within the bounding box is occupied."""
+        ...
+
+
 def resolve_obstacle_map(
     obstacle_map: "str | np.ndarray | dict[str, Any] | None" = None,
     world_width: Optional[float] = None,
@@ -15,8 +60,10 @@ def resolve_obstacle_map(
 ) -> Optional[np.ndarray]:
     """Resolve obstacle_map to None or a float64 occupancy grid ndarray.
 
-    Generator specs (dict with ``name``) require ``world_width`` and
-    ``world_height``; grid size is computed from world size and ``resolution``.
+    Accepted types: ``None``, path string (image file), ndarray, or a
+    generator spec dict with ``name`` and ``resolution``.  Generator specs
+    require ``world_width`` and ``world_height``; grid size is computed from
+    world size and ``resolution``.
 
     Returns:
         None, or ndarray (0-100 grid, dtype float64).
@@ -90,25 +137,34 @@ def build_grid_from_generator(
 
 
 class Map:
+    """Map data container for navigation / path-planning.
+
+    Satisfies the :class:`EnvGridMap` protocol so that it can be passed to
+    any planner that expects ``EnvGridMap``.
+
+    Collision precedence (shared by all planners):
+      1. Grid lookup (O(1) per cell) when *grid* is not ``None``.
+      2. Shapely geometry intersection when *grid* is unavailable.
+    """
+
     def __init__(
         self,
-        width: int = 10,
-        height: int = 10,
+        width: float = 10,
+        height: float = 10,
         resolution: float = 0.1,
         obstacle_list: Optional[list] = None,
         grid: Optional[np.ndarray] = None,
     ):
         """
-        Map class for storing map data and navigation information
+        Initialize the Map.
 
         Args:
-            width (int): width of the map
-            height (int): height of the map
-            resolution (float): resolution of the map
-            obstacle_list (list): list of obstacle objects for collision detection
-            grid (np.ndarray): grid map data for collision detection.
+            width: Width of the world (metres).
+            height: Height of the world (metres).
+            resolution: Planner discretisation cell size (metres/cell).
+            obstacle_list: Obstacle objects for Shapely collision detection.
+            grid: Occupancy grid (0-100) for grid-based collision detection.
         """
-
         if obstacle_list is None:
             obstacle_list = []
         self.width = width
@@ -117,8 +173,82 @@ class Map:
         self.obstacle_list = obstacle_list
         self.grid = grid
 
+        # Warn when the user-specified resolution diverges from the actual
+        # grid cell size by more than 5 %.
+        if grid is not None:
+            gr = self.grid_resolution
+            if gr is not None:
+                gx, _gy = gr
+                if abs(resolution - gx) / max(resolution, gx) > 0.05:
+                    warnings.warn(
+                        f"Map.resolution ({resolution}) differs from grid "
+                        f"cell size ({gx:.4f} x {_gy:.4f}). Grid-based "
+                        f"planners will use grid_resolution for lookups.",
+                        stacklevel=2,
+                    )
+
+    @property
+    def grid_resolution(self) -> tuple[float, float] | None:
+        """Actual cell size ``(x_reso, y_reso)`` derived from *grid* shape and world size.
+
+        Returns ``None`` when no grid is present.
+        """
+        if self.grid is None:
+            return None
+        return (
+            self.width / self.grid.shape[0],
+            self.height / self.grid.shape[1],
+        )
+
+    def grid_occupied(
+        self,
+        x: float,
+        y: float,
+        margin_x: float = 0.0,
+        margin_y: float = 0.0,
+        threshold: float = 50.0,
+    ) -> bool | None:
+        """Check if any grid cell within the bounding box around ``(x, y)`` is occupied.
+
+        The bounding box extends *margin_x* / *margin_y* (in world metres) in
+        each direction.  Grid cells whose occupancy exceeds *threshold* are
+        considered occupied.
+
+        Returns:
+            ``None`` when no grid is present (caller should fall back to
+            Shapely or another collision method).  ``True`` / ``False``
+            otherwise.
+        """
+        if self.grid is None:
+            return None
+        gr = self.grid_resolution
+        if gr is None:
+            return None  # defensive; grid is None already caught above
+        rx, ry = gr
+        gx = int(x / rx)
+        gy = int(y / ry)
+        rows, cols = self.grid.shape
+        if margin_x > 0:
+            mx = max(1, int(np.ceil(margin_x / rx)))
+        else:
+            mx = 0
+        if margin_y > 0:
+            my = max(1, int(np.ceil(margin_y / ry)))
+        else:
+            my = 0
+        return bool(
+            np.any(
+                self.grid[
+                    max(0, gx - mx) : min(rows, gx + mx + 1),
+                    max(0, gy - my) : min(cols, gy + my + 1),
+                ]
+                > threshold
+            )
+        )
+
 
 __all__ = [
+    "EnvGridMap",
     "GridMapGenerator",
     "ImageGridGenerator",
     "Map",

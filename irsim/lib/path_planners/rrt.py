@@ -1,6 +1,10 @@
 """
 Rapidly-exploring Random Tree (RRT) path planner.
 
+Collision precedence:
+  1. Grid lookup (O(1) per cell) when ``env_map.grid`` is not ``None``.
+  2. Shapely geometry intersection when the grid is unavailable.
+
 Reference:
     S. M. LaValle, "Rapidly-Exploring Random Trees: A New Tool for Path
     Planning," 1998.
@@ -28,7 +32,7 @@ import shapely
 from shapely import Point as ShapelyPoint
 from shapely.affinity import translate as shapely_translate
 
-from irsim.world.map import Map
+from irsim.world.map import EnvGridMap
 
 if TYPE_CHECKING:
     from matplotlib.lines import Line2D
@@ -100,7 +104,7 @@ class RRT:
 
         __slots__ = ("xmin", "ymin", "xmax", "ymax")
 
-        def __init__(self, env_map: Map) -> None:
+        def __init__(self, env_map: EnvGridMap) -> None:
             self.xmin: float = 0.0
             self.ymin: float = 0.0
             self.xmax: float = float(env_map.width)
@@ -112,7 +116,7 @@ class RRT:
 
     def __init__(
         self,
-        env_map: Map,
+        env_map: EnvGridMap,
         robot_radius: float,
         expand_dis: float = 1.0,
         path_resolution: float = 0.25,
@@ -122,13 +126,15 @@ class RRT:
         """Initialise the RRT planner.
 
         Args:
-            env_map: Environment map with obstacle information.
+            env_map: Environment map (any :class:`~irsim.world.map.EnvGridMap`
+                compatible object).
             robot_radius: Robot body modelled as a circle with this radius.
             expand_dis: Maximum extension distance per steer step.
             path_resolution: Discretisation resolution along steered edges.
             goal_sample_rate: Percentage chance of sampling the goal.
             max_iter: Maximum number of iterations.
         """
+        self._map = env_map
         self.obstacle_list = env_map.obstacle_list[:]
         self.max_x: float = float(env_map.width)
         self.max_y: float = float(env_map.height)
@@ -145,19 +151,6 @@ class RRT:
         self.node_list: list[TreeNode] = []
         self.start: TreeNode | None = None
         self.end: TreeNode | None = None
-
-        # --- collision optimisation ---
-        self._grid: np.ndarray | None = getattr(env_map, "grid", None)
-        if self._grid is not None:
-            self._grid_x_reso: float = env_map.width / self._grid.shape[0]
-            self._grid_y_reso: float = env_map.height / self._grid.shape[1]
-            self._rr_cells_x: int = max(1, int(np.ceil(robot_radius / self._grid_x_reso)))
-            self._rr_cells_y: int = max(1, int(np.ceil(robot_radius / self._grid_y_reso)))
-        else:
-            self._grid_x_reso = 0.0
-            self._grid_y_reso = 0.0
-            self._rr_cells_x = 0
-            self._rr_cells_y = 0
 
         self._collision_circle = ShapelyPoint(0, 0).buffer(robot_radius)
         for obj in self.obstacle_list:
@@ -415,8 +408,8 @@ class RRT:
     def check_collision(self, node: TreeNode, robot_radius: float) -> bool:
         """Check whether *node*'s edge is collision-free.
 
-        Uses a fast grid-based lookup when available, otherwise falls back
-        to cached Shapely geometry intersection.
+        Delegates to :meth:`Map.grid_occupied` when a grid is present;
+        falls back to Shapely geometry for non-grid obstacles.
 
         Returns:
             *True* if the path is **collision-free**.
@@ -424,51 +417,26 @@ class RRT:
         if node is None:
             return False
 
-        if self._grid is not None:
-            return self._check_collision_grid(node)
-
-        # shapely fallback
+        rr = robot_radius
+        # Check each point along the discretised edge
         for px, py in zip(node.path_x, node.path_y):
-            if self._check_node_shapely(px, py):
+            if self._check_point(px, py, rr):
                 return False
-        return not self._check_node_shapely(node.x, node.y)
+        # Also check the node endpoint itself
+        return not self._check_point(node.x, node.y, rr)
 
-    def _check_collision_grid(self, node: TreeNode) -> bool:
-        """Grid-based collision check.  Returns *True* if collision-free."""
-        grid = self._grid
-        rows, cols = grid.shape
-        inv_xr = 1.0 / self._grid_x_reso
-        inv_yr = 1.0 / self._grid_y_reso
-        rr_x = self._rr_cells_x
-        rr_y = self._rr_cells_y
-
-        for x, y in zip(node.path_x, node.path_y):
-            gx = int(x * inv_xr)
-            gy = int(y * inv_yr)
-            if np.any(
-                grid[
-                    max(0, gx - rr_x) : min(rows, gx + rr_x + 1),
-                    max(0, gy - rr_y) : min(cols, gy + rr_y + 1),
-                ]
-                > 50
-            ):
-                return False
-
-        gx = int(node.x * inv_xr)
-        gy = int(node.y * inv_yr)
-        return not np.any(
-            grid[
-                max(0, gx - rr_x) : min(rows, gx + rr_x + 1),
-                max(0, gy - rr_y) : min(cols, gy + rr_y + 1),
-            ]
-            > 50
-        )
-
-    def _check_node_shapely(self, x: float, y: float) -> bool:
-        """Single-point collision via cached Shapely circle.
+    def _check_point(self, x: float, y: float, rr: float) -> bool:
+        """Single-point collision check.
 
         Returns *True* if a **collision is detected**.
         """
+        # Grid path (fast)
+        grid_hit = self._map.grid_occupied(x, y, margin_x=rr, margin_y=rr)
+        if grid_hit is True:
+            return True
+        if grid_hit is False and not self.obstacle_list:
+            return False
+        # Shapely fallback (or combined when obstacle_list exists alongside grid)
         moved = shapely_translate(self._collision_circle, xoff=x, yoff=y)
         return any(
             shapely.intersects(moved, obj._geometry) for obj in self.obstacle_list
@@ -479,22 +447,15 @@ class RRT:
 
         Returns *True* if there **is** a collision.
         """
-        if self._grid is not None:
-            gx = int(x / self._grid_x_reso)
-            gy = int(y / self._grid_y_reso)
-            rows, cols = self._grid.shape
-            rr_cx = max(1, int(np.ceil(rr / self._grid_x_reso)))
-            rr_cy = max(1, int(np.ceil(rr / self._grid_y_reso)))
-            return bool(
-                np.any(
-                    self._grid[
-                        max(0, gx - rr_cx) : min(rows, gx + rr_cx + 1),
-                        max(0, gy - rr_cy) : min(cols, gy + rr_cy + 1),
-                    ]
-                    > 50
-                )
-            )
-        return self._check_node_shapely(x, y)
+        grid_hit = self._map.grid_occupied(x, y, margin_x=rr, margin_y=rr)
+        if grid_hit is True:
+            return True
+        if grid_hit is False and not self.obstacle_list:
+            return False
+        moved = shapely_translate(self._collision_circle, xoff=x, yoff=y)
+        return any(
+            shapely.intersects(moved, obj._geometry) for obj in self.obstacle_list
+        )
 
     # ------------------------------------------------------------------
     # Visualisation
@@ -513,7 +474,7 @@ class RRT:
         if not self._vis_setup_done:
             ax.figure.canvas.mpl_connect(
                 "key_release_event",
-                lambda event: [exit(0) if event.key == "escape" else None],
+                lambda event: plt.close(event.canvas.figure) if event.key == "escape" else None,
             )
             ax.plot(self.start.x, self.start.y, "xr", markersize=8, zorder=5)
             ax.plot(self.end.x, self.end.y, "xr", markersize=8, zorder=5)

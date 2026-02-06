@@ -1,6 +1,10 @@
 """
 RRT* (RRT-Star) path planner.
 
+Collision precedence (inherited from :class:`RRT`):
+  1. Grid lookup (O(1) per cell) when ``env_map.grid`` is not ``None``.
+  2. Shapely geometry intersection when the grid is unavailable.
+
 Reference:
     S. Karaman and E. Frazzoli, "Sampling-based Algorithms for Optimal
     Motion Planning," Int. J. Robotics Research, 2011.
@@ -22,7 +26,7 @@ import math
 import numpy as np
 
 from irsim.lib.path_planners.rrt import RRT, TreeNode
-from irsim.world.map import Map
+from irsim.world.map import EnvGridMap
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +50,7 @@ class RRTStar(RRT):
 
     def __init__(
         self,
-        env_map: Map,
+        env_map: EnvGridMap,
         robot_radius: float,
         expand_dis: float = 1.5,
         path_resolution: float = 0.25,

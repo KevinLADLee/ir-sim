@@ -1,9 +1,12 @@
 """
-
 Jump Point Search (JPS) grid planning.
 
 An optimization of A* for uniform-cost grids that prunes symmetric paths
 and expands "jump points" only, preserving optimality while reducing nodes expanded.
+
+Collision precedence:
+  1. Grid lookup (O(1) per cell) when ``env_map.grid`` is not ``None``.
+  2. Shapely geometry intersection when the grid is unavailable.
 
 References
 ----------
@@ -23,7 +26,7 @@ import numpy as np
 import shapely
 
 from irsim.lib.handler.geometry_handler import GeometryFactory
-from irsim.world.map import Map
+from irsim.world.map import EnvGridMap
 
 # Type alias: ((jx, jy, dx, dy), cost) for each jump successor
 JpsSuccessor = tuple[tuple[int, int, int, int], float]
@@ -119,29 +122,22 @@ class JPSPlanner:
     falls back to Shapely geometry intersection (same as :class:`AStarPlanner`).
     """
 
-    def __init__(self, env_map: Map) -> None:
+    def __init__(self, env_map: EnvGridMap) -> None:
         """
         Initialize JPS planner.
 
         Args:
-            env_map (Map): Environment map where planning takes place.
-                Resolution and bounds are taken from the map (same as :class:`AStarPlanner`).
+            env_map: Environment map (any :class:`~irsim.world.map.EnvGridMap`
+                compatible object).  Resolution and bounds are taken from the
+                map (same as :class:`AStarPlanner`).
         """
+        self._map = env_map
         self.resolution = env_map.resolution
         self.min_x, self.min_y = 0, 0
         self.max_x, self.max_y = env_map.height, env_map.width
         self.x_width = round((self.max_x - self.min_x) / self.resolution)
         self.y_width = round((self.max_y - self.min_y) / self.resolution)
         self.obstacle_list = env_map.obstacle_list[:]
-
-        grid = getattr(env_map, "grid", None)
-        if grid is not None and grid.size > 0 and not self.obstacle_list:
-            self._grid = grid
-            self._grid_res_x = env_map.width / grid.shape[0]
-            self._grid_res_y = env_map.height / grid.shape[1]
-        else:
-            self._grid = None
-            self._grid_res_x = self._grid_res_y = None
 
     def planning(
         self,
@@ -192,7 +188,7 @@ class JPSPlanner:
                 )
                 plt.gcf().canvas.mpl_connect(
                     "key_release_event",
-                    lambda event: [exit(0) if event.key == "escape" else None],
+                    lambda event: plt.close(event.canvas.figure) if event.key == "escape" else None,
                 )
                 if len(closed_set) % 10 == 0:
                     plt.pause(0.01)
@@ -297,33 +293,17 @@ class JPSPlanner:
         return False
 
     def _is_occupied(self, ix: int, iy: int) -> bool:
-        """True if grid cell (ix, iy) is in bounds and occupied (same collision as A*)."""
+        """True if grid cell (ix, iy) is in bounds and occupied."""
         if ix < 0 or iy < 0 or ix >= self.x_width or iy >= self.y_width:
             return False
-        if self._grid is not None:
-            return self._grid_occupied(ix, iy)
         px = self.calc_grid_position(ix, self.min_x)
         py = self.calc_grid_position(iy, self.min_y)
         return self._check_collision(px, py)
 
-    def _grid_occupied(self, ix: int, iy: int) -> bool:
-        """True if planner cell (ix, iy) overlaps any occupied cell in the occupancy grid.
-        Planner uses (max_x, max_y) = (env height, env width), so planner ix = world height axis, iy = world width axis; grid is [width, height]."""
-        # Grid dim0 = world width, dim1 = world height; planner (ix, iy) -> world (height_axis, width_axis) = (ix*res, iy*res)
-        gi_w = int(iy * self.resolution / self._grid_res_x)
-        gi_w_hi = min(int((iy + 1) * self.resolution / self._grid_res_x), self._grid.shape[0])
-        gi_h = int(ix * self.resolution / self._grid_res_y)
-        gi_h_hi = min(int((ix + 1) * self.resolution / self._grid_res_y), self._grid.shape[1])
-        if gi_w >= gi_w_hi or gi_h >= gi_h_hi:
-            return False
-        return bool(np.any(self._grid[gi_w:gi_w_hi, gi_h:gi_h_hi] > 50))
-
     def _is_walkable(self, ix: int, iy: int) -> bool:
-        """True if grid cell (ix, iy) is in bounds and not in collision (same as A*)."""
+        """True if grid cell (ix, iy) is in bounds and not in collision."""
         if ix < 0 or iy < 0 or ix >= self.x_width or iy >= self.y_width:
             return False
-        if self._grid is not None:
-            return not self._grid_occupied(ix, iy)
         px = self.calc_grid_position(ix, self.min_x)
         py = self.calc_grid_position(iy, self.min_y)
         return not self._check_collision(px, py)
@@ -374,7 +354,15 @@ class JPSPlanner:
         return (y - self.min_y) * self.x_width + (x - self.min_x)
 
     def _check_collision(self, x: float, y: float) -> bool:
-        """True if world position (x,y) is in collision (Shapely fallback)."""
+        """True if world position ``(x, y)`` is in collision.
+
+        Delegates to :meth:`Map.grid_occupied`; falls back to Shapely.
+        """
+        result = self._map.grid_occupied(
+            x, y, margin_x=self.resolution, margin_y=self.resolution,
+        )
+        if result is not None:
+            return result
         shape = {"name": "rectangle", "length": self.resolution, "width": self.resolution}
         geometry = GeometryFactory.create_geometry(**shape).step(np.array([[x, y]]).T)
         return any(shapely.intersects(geometry, obj._geometry) for obj in self.obstacle_list)

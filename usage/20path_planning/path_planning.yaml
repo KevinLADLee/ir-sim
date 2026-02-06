@@ -24,3 +24,7 @@ robot:
     state: [2, 2, 0]
     goal: [16, 18, 0]
     behavior: {name: 'dash'}
+
+# obstacle:
+#   - shape: {name: 'circle', radius: 1.0}
+#     state: [8, 12, 0]

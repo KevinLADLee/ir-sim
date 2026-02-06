@@ -125,14 +125,15 @@ class World:
     ) -> tuple:
         """Generate a grid map for obstacles.
 
-        The *obstacle_map* value (path string, dict spec, ndarray, generator
-        instance, etc.) is resolved to a float64 ndarray by
-        :pyfunc:`irsim.world.map.resolve_obstacle_map`.  This method then
-        applies down-sampling and computes obstacle indices / positions.
+        The *obstacle_map* value is resolved to a float64 ndarray by
+        :pyfunc:`irsim.world.map.resolve_obstacle_map`.  Accepted types:
+        ``None``, a path string (image file), an ndarray, or a generator spec
+        dict (with ``name`` and ``resolution``).  This method then applies
+        down-sampling and computes obstacle indices / positions.
 
         Args:
-            obstacle_map: Anything accepted by
-                :pyfunc:`irsim.world.map.resolve_obstacle_map`.
+            obstacle_map: ``None``, path string, ndarray, or generator spec
+                dict; see :pyfunc:`irsim.world.map.resolve_obstacle_map`.
             mdownsample (int): Downsampling factor.
 
         Returns:

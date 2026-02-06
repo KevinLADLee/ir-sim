@@ -1,6 +1,10 @@
 """
 Informed RRT* path planner.
 
+Collision precedence (inherited from :class:`RRT`):
+  1. Grid lookup (O(1) per cell) when ``env_map.grid`` is not ``None``.
+  2. Shapely geometry intersection when the grid is unavailable.
+
 Informed RRT* improves upon RRT* by constraining the sampling region to an
 ellipsoidal subset of the planning space once an initial solution has been
 found.  The ellipse is defined by the start and goal positions as foci, and
@@ -36,7 +40,7 @@ from matplotlib.patches import Polygon as MplPolygon
 
 from irsim.lib.path_planners.rrt import TreeNode
 from irsim.lib.path_planners.rrt_star import RRTStar
-from irsim.world.map import Map
+from irsim.world.map import EnvGridMap
 
 if TYPE_CHECKING:
     from matplotlib.lines import Line2D
@@ -58,7 +62,7 @@ class InformedRRTStar(RRTStar):
 
     def __init__(
         self,
-        env_map: Map,
+        env_map: EnvGridMap,
         robot_radius: float,
         expand_dis: float = 1.5,
         path_resolution: float = 0.25,
@@ -332,7 +336,7 @@ class InformedRRTStar(RRTStar):
         if not self._vis_setup_done:
             ax.figure.canvas.mpl_connect(
                 "key_release_event",
-                lambda event: [exit(0) if event.key == "escape" else None],
+                lambda event: plt.close(event.canvas.figure) if event.key == "escape" else None,
             )
             (self._start_marker,) = ax.plot(
                 self.start.x,
