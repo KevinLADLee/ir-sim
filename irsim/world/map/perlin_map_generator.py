@@ -15,21 +15,21 @@ import numpy as np
 from .grid_map_generator_base import GridMapGenerator
 
 # Default gradient vectors for 2D Perlin noise
-# 8 unit vectors pointing in cardinal and diagonal directions
+# 8 unit vectors: 4 cardinal + 4 diagonal (pre-normalized to unit length)
+_SQRT2_INV = 1.0 / np.sqrt(2)
 _GRADIENTS = np.array(
     [
         [1, 0],
         [-1, 0],
         [0, 1],
         [0, -1],
-        [1, 1],
-        [-1, 1],
-        [1, -1],
-        [-1, -1],
+        [_SQRT2_INV, _SQRT2_INV],
+        [-_SQRT2_INV, _SQRT2_INV],
+        [_SQRT2_INV, -_SQRT2_INV],
+        [-_SQRT2_INV, -_SQRT2_INV],
     ],
     dtype=np.float64,
 )
-_GRADIENTS[4:] /= np.sqrt(2)  # Normalize diagonal vectors
 
 
 def _fade(t: np.ndarray) -> np.ndarray:

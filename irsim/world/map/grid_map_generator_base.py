@@ -50,7 +50,8 @@ class GridMapGenerator(ABC):
         """Occupancy grid (0-100). Generates on first access if needed."""
         if self._grid is None:
             self.generate()
-        assert self._grid is not None
+        if self._grid is None:
+            raise RuntimeError("Grid generation failed: _build_grid() returned None")
         return self._grid
 
     def save_as_image(self, filepath: str, invert: bool = True) -> None:

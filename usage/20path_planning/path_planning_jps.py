@@ -11,7 +11,7 @@ from irsim.lib.path_planners import JPSPlanner
 env = irsim.make("path_planning.yaml", save_ani=False, full=False)
 
 env_map = env.get_map(resolution=0.3)
-planner = JPSPlanner(env_map, resolution=0.3)
+planner = JPSPlanner(env_map)
 
 robot_state = env.get_robot_state()
 robot_info = env.get_robot_info()

@@ -10,8 +10,8 @@ from irsim.lib.path_planners import AStarPlanner
 
 env = irsim.make("path_planning.yaml", save_ani=False, full=False)
 
-env_map = env.get_map(resolution=0.2)
-planner = AStarPlanner(env_map, resolution=0.2)
+env_map = env.get_map(resolution=0.3)
+planner = AStarPlanner(env_map)
 
 robot_state = env.get_robot_state()
 robot_info = env.get_robot_info()

@@ -6,17 +6,18 @@ using RRT*, then draws the trajectory and shows the result.
 """
 
 import numpy as np
+
 import irsim
 from irsim.lib.path_planners import RRTStar
 
 env = irsim.make("path_planning.yaml", save_ani=False, full=False)
 
-env_map = env.get_map(resolution=0.3)
+env_map = env.get_map(resolution=0.1)
 planner = RRTStar(
     env_map,
     robot_radius=0.3,
     expand_dis=1.5,
-    max_iter=500,
+    max_iter=1500,
     search_until_max_iter=False,
 )
 

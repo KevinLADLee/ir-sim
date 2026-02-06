@@ -22,16 +22,15 @@ from irsim.world.map import Map
 
 
 class AStarPlanner:
-    def __init__(self, env_map: Map, resolution: float) -> None:
+    def __init__(self, env_map: Map) -> None:
         """
         Initialize A* planner.
 
         Args:
             env_map (Map): Environment map where planning takes place.
-            resolution (float): Grid resolution in meters.
         """
 
-        self.resolution = resolution
+        self.resolution = env_map.resolution # m/cell
         self.obstacle_list = env_map.obstacle_list[:]
         self.min_x, self.min_y = 0, 0
         self.max_x, self.max_y = (

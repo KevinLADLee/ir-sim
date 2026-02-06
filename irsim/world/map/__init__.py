@@ -1,4 +1,4 @@
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
 import numpy as np
 
@@ -9,7 +9,7 @@ from .perlin_map_generator import PerlinGridGenerator
 
 
 def resolve_obstacle_map(
-    obstacle_map: Optional[Union[str, np.ndarray, Any]],
+    obstacle_map: "str | np.ndarray | dict[str, Any] | None" = None,
     world_width: Optional[float] = None,
     world_height: Optional[float] = None,
 ) -> Optional[np.ndarray]:

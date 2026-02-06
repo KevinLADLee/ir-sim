@@ -26,10 +26,13 @@ from irsim.lib.path_planners.rrt_star import RRTStar
     ],
 )
 def test_path_planners(planner_class, resolution, env_factory):
-    """Test path planning algorithms find valid paths."""
+    """Test path planning algorithms find valid paths. Resolution is from the map."""
     env = env_factory("test_collision_world.yaml", full=False)
-    env_map = env.get_map()
-    planner = planner_class(env_map, resolution)
+    env_map = env.get_map(resolution=resolution)
+    if planner_class in (AStarPlanner, JPSPlanner):
+        planner = planner_class(env_map)
+    else:
+        planner = planner_class(env_map, robot_radius=resolution)
     robot_info = env.get_robot_info()
     robot_state = env.get_robot_state()
     trajectory = planner.planning(robot_state, robot_info.goal)

@@ -5,16 +5,19 @@ Jump Point Search (JPS) grid planning.
 An optimization of A* for uniform-cost grids that prunes symmetric paths
 and expands "jump points" only, preserving optimality while reducing nodes expanded.
 
-author: D. Harabor, A. Grastien (original JPS)
-adapted by: Reinis Cimurs (grid/collision integration)
-
-See: https://en.wikipedia.org/wiki/Jump_point_search
+References
+----------
+- D. Harabor and A. Grastien. Online Graph Pruning for Pathfinding on Grid Maps.
+  In AAAI, 2011. https://en.wikipedia.org/wiki/Jump_point_search
+- 2D implementation reference: KumarRobotics/jps3d (C++ JPS on 2D/3D maps).
+  https://github.com/KumarRobotics/jps3d
 
 """
 
-import math
-from typing import Optional
+from __future__ import annotations
 
+import math
+from dataclasses import dataclass
 import matplotlib.pyplot as plt
 import numpy as np
 import shapely
@@ -22,50 +25,123 @@ import shapely
 from irsim.lib.handler.geometry_handler import GeometryFactory
 from irsim.world.map import Map
 
+# Type alias: ((jx, jy, dx, dy), cost) for each jump successor
+JpsSuccessor = tuple[tuple[int, int, int, int], float]
 
-# 8 directions: (dx, dy, cost)
-_DIRECTIONS = [
-    (1, 0, 1.0),
-    (0, 1, 1.0),
-    (-1, 0, 1.0),
-    (0, -1, 1.0),
-    (1, 1, math.sqrt(2)),
-    (1, -1, math.sqrt(2)),
-    (-1, 1, math.sqrt(2)),
-    (-1, -1, math.sqrt(2)),
-]
+
+# --- JPS 2D neighbor tables (aligned with jps3d JPS2DNeib) ---
+# Direction id: (dx+1) + 3*(dy+1) for dx,dy in {-1,0,1}
+# nsz[norm1][0] = number of natural neighbors, nsz[norm1][1] = number of forced checks
+# norm1 = |dx| + |dy|  =>  0: start, 1: cardinal, 2: diagonal
+_JPS2D_NSZ = ((8, 0), (1, 2), (3, 2))
+
+# Natural neighbors ns[id][0/1][dev]: id -> (list of dx, list of dy) to try
+# Precomputed like JPS2DNeib::Neib: norm1=0 -> 8 dirs; norm1=1 -> (dx,dy); norm1=2 -> (dx,0),(0,dy),(dx,dy)
+def _build_jps2d_ns() -> list[list[list[int]]]:
+    ns: list[list[list[int]]] = [[[] for _ in range(2)] for _ in range(9)]
+    for dy in range(-1, 2):
+        for dx in range(-1, 2):
+            id_ = (dx + 1) + 3 * (dy + 1)
+            norm1 = abs(dx) + abs(dy)
+            n = _JPS2D_NSZ[norm1][0]
+            for dev in range(n):
+                if norm1 == 0:
+                    tbl = [(1, 0), (-1, 0), (0, 1), (1, 1), (-1, 1), (0, -1), (1, -1), (-1, -1)]
+                    tx, ty = tbl[dev]
+                elif norm1 == 1:
+                    tx, ty = dx, dy
+                else:
+                    tbl = [(dx, 0), (0, dy), (dx, dy)]
+                    tx, ty = tbl[dev]
+                ns[id_][0].append(tx)
+                ns[id_][1].append(ty)
+    return ns
+
+
+def _build_jps2d_f1_f2() -> tuple[list[list[list[int]]], list[list[list[int]]]]:
+    """f1 = offset to check if occupied; f2 = direction to jump if forced. Same as JPS2DNeib::FNeib."""
+    f1: list[list[list[int]]] = [[[] for _ in range(2)] for _ in range(9)]
+    f2: list[list[list[int]]] = [[[] for _ in range(2)] for _ in range(9)]
+    for dy in range(-1, 2):
+        for dx in range(-1, 2):
+            id_ = (dx + 1) + 3 * (dy + 1)
+            norm1 = abs(dx) + abs(dy)
+            nf = _JPS2D_NSZ[norm1][1]
+            for dev in range(nf):
+                if norm1 == 1:
+                    if dev == 0:
+                        fx, fy = 0, 1
+                    else:
+                        fx, fy = 0, -1
+                    if dx == 0:
+                        fx, fy = fy, 0
+                    nx, ny = dx + fx, dy + fy
+                else:  # norm1 == 2
+                    if dev == 0:
+                        fx, fy = -dx, 0
+                        nx, ny = -dx, dy
+                    else:
+                        fx, fy = 0, -dy
+                        nx, ny = dx, -dy
+                f1[id_][0].append(fx)
+                f1[id_][1].append(fy)
+                f2[id_][0].append(nx)
+                f2[id_][1].append(ny)
+    return f1, f2
+
+
+_JPS2D_NS = _build_jps2d_ns()
+_JPS2D_F1, _JPS2D_F2 = _build_jps2d_f1_f2()
+
+
+@dataclass
+class _JpsNode:
+    """Grid node for JPS: (x, y), cost, parent index, and direction (dx, dy) for pruning."""
+
+    x: int
+    y: int
+    cost: float
+    parent_index: int
+    dx: int = 0
+    dy: int = 0
+
+
+def _dir_id(dx: int, dy: int) -> int:
+    """Direction id: (dx+1) + 3*(dy+1) for dx, dy in {-1, 0, 1}."""
+    return (dx + 1) + 3 * (dy + 1)
 
 
 class JPSPlanner:
-    def __init__(self, env_map: Map, resolution: float) -> None:
+    """Jump Point Search planner for uniform-cost 8-connected grids.
+
+    When the environment map carries an occupancy grid (``env_map.grid``),
+    collision checks use a fast O(1) grid lookup.  Otherwise, the planner
+    falls back to Shapely geometry intersection (same as :class:`AStarPlanner`).
+    """
+
+    def __init__(self, env_map: Map) -> None:
         """
         Initialize JPS planner.
 
         Args:
             env_map (Map): Environment map where planning takes place.
-            resolution (float): Grid resolution in meters.
+                Resolution and bounds are taken from the map (same as :class:`AStarPlanner`).
         """
-        self.resolution = resolution
-        self.obstacle_list = env_map.obstacle_list[:]
+        self.resolution = env_map.resolution
         self.min_x, self.min_y = 0, 0
-        self.max_x, self.max_y = (
-            env_map.height,
-            env_map.width,
-        )
+        self.max_x, self.max_y = env_map.height, env_map.width
         self.x_width = round((self.max_x - self.min_x) / self.resolution)
         self.y_width = round((self.max_y - self.min_y) / self.resolution)
+        self.obstacle_list = env_map.obstacle_list[:]
 
-    class Node:
-        """Node class (same as A* for path reconstruction)."""
-
-        def __init__(self, x: int, y: int, cost: float, parent_index: int) -> None:
-            self.x = x
-            self.y = y
-            self.cost = cost
-            self.parent_index = parent_index
-
-        def __str__(self) -> str:
-            return f"{self.x},{self.y},{self.cost},{self.parent_index}"
+        grid = getattr(env_map, "grid", None)
+        if grid is not None and grid.size > 0 and not self.obstacle_list:
+            self._grid = grid
+            self._grid_res_x = env_map.width / grid.shape[0]
+            self._grid_res_y = env_map.height / grid.shape[1]
+        else:
+            self._grid = None
+            self._grid_res_x = self._grid_res_y = None
 
     def planning(
         self,
@@ -84,21 +160,20 @@ class JPSPlanner:
         Returns:
             np.ndarray: shape (2, N) array [rx, ry] of the final path
         """
-        start_node = self.Node(
-            self.calc_xy_index(start_pose[0].item(), self.min_x),
-            self.calc_xy_index(start_pose[1].item(), self.min_y),
-            0.0,
-            -1,
-        )
-        goal_node = self.Node(
-            self.calc_xy_index(goal_pose[0].item(), self.min_x),
-            self.calc_xy_index(goal_pose[1].item(), self.min_y),
-            0.0,
-            -1,
-        )
+        sx = self.calc_xy_index(start_pose[0].item(), self.min_x)
+        sy = self.calc_xy_index(start_pose[1].item(), self.min_y)
+        start_node = _JpsNode(sx, sy, 0.0, -1, 0, 0)
+        gx = self.calc_xy_index(goal_pose[0].item(), self.min_x)
+        gy = self.calc_xy_index(goal_pose[1].item(), self.min_y)
+        goal_node = _JpsNode(gx, gy, 0.0, -1)
 
-        open_set: dict[int, "JPSPlanner.Node"] = {}
-        closed_set: dict[int, "JPSPlanner.Node"] = {}
+        if not self._is_walkable(start_node.x, start_node.y):
+            return None
+        if not self._is_walkable(goal_node.x, goal_node.y):
+            return None
+
+        open_set: dict[int, _JpsNode] = {}
+        closed_set: dict[int, _JpsNode] = {}
         open_set[self.calc_grid_index_from_xy(start_node.x, start_node.y)] = start_node
 
         while open_set:
@@ -131,23 +206,10 @@ class JPSPlanner:
             del open_set[c_id]
             closed_set[c_id] = current
 
-            parent_dx, parent_dy = self._parent_direction(current, closed_set)
-            for (dx, dy, step_cost) in self._get_pruned_directions(
-                current.x, current.y, parent_dx, parent_dy
+            for (jx, jy, dx, dy), move_cost in self._get_jps_successors(
+                current, goal_node.x, goal_node.y
             ):
-                jump_point = self._jump(
-                    current.x, current.y, dx, dy, goal_node.x, goal_node.y
-                )
-                if jump_point is None:
-                    continue
-                jx, jy = jump_point
-                move_cost = self._move_cost(current.x, current.y, jx, jy, step_cost)
-                node = self.Node(
-                    jx,
-                    jy,
-                    current.cost + move_cost,
-                    c_id,
-                )
+                node = _JpsNode(jx, jy, current.cost + move_cost, c_id, dx, dy)
                 n_id = self.calc_grid_index_from_xy(jx, jy)
 
                 if n_id in closed_set:
@@ -155,66 +217,41 @@ class JPSPlanner:
                 if n_id not in open_set or open_set[n_id].cost > node.cost:
                     open_set[n_id] = node
 
+        if goal_node.parent_index == -1:
+            print("Open set is empty..")
+            return None
         rx, ry = self._calc_final_path(goal_node, closed_set)
         return np.array([rx, ry])
 
-    def _parent_direction(
-        self,
-        node: "JPSPlanner.Node",
-        closed_set: dict[int, "JPSPlanner.Node"],
-    ) -> tuple[Optional[int], Optional[int]]:
-        """Return (dx, dy) from parent to node, or (None, None) for start."""
-        if node.parent_index == -1:
-            return (None, None)
-        parent = closed_set[node.parent_index]
-        dx = node.x - parent.x
-        dy = node.y - parent.y
-        # normalize to -1, 0, 1
-        dx = max(-1, min(1, dx))
-        dy = max(-1, min(1, dy))
-        return (dx, dy)
+    def _get_jps_successors(self, current: _JpsNode, gx: int, gy: int) -> list[JpsSuccessor]:
+        """Return list of ((jx, jy, dx, dy), cost) for each jump point successor (jps3d getJpsSucc style)."""
+        dx, dy = current.dx, current.dy
+        norm1 = abs(dx) + abs(dy)
+        num_neib, num_fneib = _JPS2D_NSZ[norm1]
+        id_ = _dir_id(dx, dy)
+        x, y = current.x, current.y
+        out: list[JpsSuccessor] = []
 
-    def _get_pruned_directions(
-        self,
-        x: int,
-        y: int,
-        parent_dx: Optional[int],
-        parent_dy: Optional[int],
-    ) -> list[tuple[int, int, float]]:
-        """Return list of (dx, dy, cost) to try from (x,y) given parent direction."""
-        if parent_dx is None and parent_dy is None:
-            return _DIRECTIONS
-
-        out: list[tuple[int, int, float]] = []
-        is_diag = parent_dx != 0 and parent_dy != 0
-        if is_diag:
-            out.append((parent_dx, parent_dy, math.sqrt(2)))
-            out.append((parent_dx, 0, 1.0))
-            out.append((0, parent_dy, 1.0))
-            return out
-
-        # Cardinal: natural direction + forced diagonals only
-        out.append((parent_dx or 0, parent_dy or 0, 1.0))
-        if (parent_dx, parent_dy) == (1, 0):
-            if not self._is_walkable(x, y + 1):
-                out.append((1, 1, math.sqrt(2)))
-            if not self._is_walkable(x, y - 1):
-                out.append((1, -1, math.sqrt(2)))
-        elif (parent_dx, parent_dy) == (-1, 0):
-            if not self._is_walkable(x, y + 1):
-                out.append((-1, 1, math.sqrt(2)))
-            if not self._is_walkable(x, y - 1):
-                out.append((-1, -1, math.sqrt(2)))
-        elif (parent_dx, parent_dy) == (0, 1):
-            if not self._is_walkable(x + 1, y):
-                out.append((1, 1, math.sqrt(2)))
-            if not self._is_walkable(x - 1, y):
-                out.append((-1, 1, math.sqrt(2)))
-        elif (parent_dx, parent_dy) == (0, -1):
-            if not self._is_walkable(x + 1, y):
-                out.append((1, -1, math.sqrt(2)))
-            if not self._is_walkable(x - 1, y):
-                out.append((-1, -1, math.sqrt(2)))
+        for dev in range(num_neib + num_fneib):
+            if dev < num_neib:
+                ddx = _JPS2D_NS[id_][0][dev]
+                ddy = _JPS2D_NS[id_][1][dev]
+                if (jp := self._jump(x, y, ddx, ddy, gx, gy)) is None:
+                    continue
+                jx, jy = jp
+            else:
+                fn = dev - num_neib
+                nx = x + _JPS2D_F1[id_][0][fn]
+                ny = y + _JPS2D_F1[id_][1][fn]
+                if not self._is_occupied(nx, ny):
+                    continue
+                ddx = _JPS2D_F2[id_][0][fn]
+                ddy = _JPS2D_F2[id_][1][fn]
+                if (jp := self._jump(x, y, ddx, ddy, gx, gy)) is None:
+                    continue
+                jx, jy = jp
+            cost = math.hypot(jx - x, jy - y)
+            out.append(((jx, jy, ddx, ddy), cost))
         return out
 
     def _jump(
@@ -225,60 +262,71 @@ class JPSPlanner:
         dy: int,
         gx: int,
         gy: int,
-    ) -> Optional[tuple[int, int]]:
-        """Jump from (x,y) in direction (dx,dy); return (jx, jy) or None."""
+    ) -> tuple[int, int] | None:
+        """Jump from (x,y) in direction (dx,dy); return (jx, jy) or None. Uses iteration along the primary direction to avoid recursion depth limits."""
         nx, ny = x + dx, y + dy
-        if not self._is_walkable(nx, ny):
-            return None
-        if nx == gx and ny == gy:
-            return (nx, ny)
+        while True:
+            if not self._is_walkable(nx, ny):
+                return None
+            # Match A*: no corner-cutting check (A* only verifies the target cell).
+            if (nx, ny) == (gx, gy) or self._has_forced(nx, ny, dx, dy):
+                return (nx, ny)
 
-        is_diag = dx != 0 and dy != 0
-        if is_diag:
-            if self._has_forced_neighbor_diag(nx, ny, dx, dy):
-                return (nx, ny)
-            if self._jump(nx, ny, dx, dy, gx, gy) is not None:
-                return (nx, ny)
-            if self._jump(nx, ny, dx, 0, gx, gy) is not None:
-                return (nx, ny)
-            if self._jump(nx, ny, 0, dy, gx, gy) is not None:
-                return (nx, ny)
-            return None
+            id_ = _dir_id(dx, dy)
+            norm1 = abs(dx) + abs(dy)
+            num_neib = _JPS2D_NSZ[norm1][0]
+            for k in range(num_neib - 1):
+                ddx = _JPS2D_NS[id_][0][k]
+                ddy = _JPS2D_NS[id_][1][k]
+                if self._jump(nx, ny, ddx, ddy, gx, gy) is not None:
+                    return (nx, ny)
 
-        if self._has_forced_neighbor_cardinal(nx, ny, dx, dy):
-            return (nx, ny)
-        return self._jump(nx, ny, dx, dy, gx, gy)
+            next_nx, next_ny = nx + dx, ny + dy
+            if not self._is_walkable(next_nx, next_ny):
+                return (nx, ny)
+            nx, ny = next_nx, next_ny
 
-    def _has_forced_neighbor_cardinal(self, x: int, y: int, dx: int, dy: int) -> bool:
-        """True if (x,y) has a forced neighbor when approached along cardinal (dx,dy)."""
-        if dx == 1 and dy == 0:
-            return (not self._is_walkable(x, y + 1)) or (not self._is_walkable(x, y - 1))
-        if dx == -1 and dy == 0:
-            return (not self._is_walkable(x, y + 1)) or (not self._is_walkable(x, y - 1))
-        if dx == 0 and dy == 1:
-            return (not self._is_walkable(x + 1, y)) or (not self._is_walkable(x - 1, y))
-        if dx == 0 and dy == -1:
-            return (not self._is_walkable(x + 1, y)) or (not self._is_walkable(x - 1, y))
+    def _has_forced(self, x: int, y: int, dx: int, dy: int) -> bool:
+        """True if (x,y) has a forced neighbor when approached along (dx,dy); uses f1 table."""
+        id_ = _dir_id(dx, dy)
+        for fn in range(_JPS2D_NSZ[abs(dx) + abs(dy)][1]):
+            nx = x + _JPS2D_F1[id_][0][fn]
+            ny = y + _JPS2D_F1[id_][1][fn]
+            if self._is_occupied(nx, ny):
+                return True
         return False
 
-    def _has_forced_neighbor_diag(self, x: int, y: int, dx: int, dy: int) -> bool:
-        """True if (x,y) has a forced neighbor when approached along diagonal (dx,dy)."""
-        if not self._is_walkable(x - dx, y + dy) or not self._is_walkable(x + dx, y - dy):
-            return True
-        return False
-
-    def _is_walkable(self, ix: int, iy: int) -> bool:
-        """True if grid cell (ix, iy) is in bounds and not in collision."""
+    def _is_occupied(self, ix: int, iy: int) -> bool:
+        """True if grid cell (ix, iy) is in bounds and occupied (same collision as A*)."""
+        if ix < 0 or iy < 0 or ix >= self.x_width or iy >= self.y_width:
+            return False
+        if self._grid is not None:
+            return self._grid_occupied(ix, iy)
         px = self.calc_grid_position(ix, self.min_x)
         py = self.calc_grid_position(iy, self.min_y)
-        if px < self.min_x or py < self.min_y or px >= self.max_x or py >= self.max_y:
-            return False
-        return not self._check_collision(px, py)
+        return self._check_collision(px, py)
 
-    def _move_cost(self, x1: int, y1: int, x2: int, y2: int, step_cost: float) -> float:
-        """Cost of moving from (x1,y1) to (x2,y2) with given step cost."""
-        steps = max(abs(x2 - x1), abs(y2 - y1))
-        return steps * step_cost
+    def _grid_occupied(self, ix: int, iy: int) -> bool:
+        """True if planner cell (ix, iy) overlaps any occupied cell in the occupancy grid.
+        Planner uses (max_x, max_y) = (env height, env width), so planner ix = world height axis, iy = world width axis; grid is [width, height]."""
+        # Grid dim0 = world width, dim1 = world height; planner (ix, iy) -> world (height_axis, width_axis) = (ix*res, iy*res)
+        gi_w = int(iy * self.resolution / self._grid_res_x)
+        gi_w_hi = min(int((iy + 1) * self.resolution / self._grid_res_x), self._grid.shape[0])
+        gi_h = int(ix * self.resolution / self._grid_res_y)
+        gi_h_hi = min(int((ix + 1) * self.resolution / self._grid_res_y), self._grid.shape[1])
+        if gi_w >= gi_w_hi or gi_h >= gi_h_hi:
+            return False
+        return bool(np.any(self._grid[gi_w:gi_w_hi, gi_h:gi_h_hi] > 50))
+
+    def _is_walkable(self, ix: int, iy: int) -> bool:
+        """True if grid cell (ix, iy) is in bounds and not in collision (same as A*)."""
+        if ix < 0 or iy < 0 or ix >= self.x_width or iy >= self.y_width:
+            return False
+        if self._grid is not None:
+            return not self._grid_occupied(ix, iy)
+        px = self.calc_grid_position(ix, self.min_x)
+        py = self.calc_grid_position(iy, self.min_y)
+        return not self._check_collision(px, py)
 
     def _heuristic(self, gx: int, gy: int, x: int, y: int) -> float:
         """Octile heuristic for 8-directional grid."""
@@ -286,19 +334,34 @@ class JPSPlanner:
         dy = abs(gy - y)
         return (dx + dy) + (math.sqrt(2) - 1) * min(dx, dy)
 
-    def _calc_final_path(
-        self,
-        goal_node: "JPSPlanner.Node",
-        closed_set: dict[int, "JPSPlanner.Node"],
-    ) -> tuple[list[float], list[float]]:
-        rx = [self.calc_grid_position(goal_node.x, self.min_x)]
-        ry = [self.calc_grid_position(goal_node.y, self.min_y)]
-        parent_index = goal_node.parent_index
-        while parent_index != -1:
-            n = closed_set[parent_index]
-            rx.append(self.calc_grid_position(n.x, self.min_x))
-            ry.append(self.calc_grid_position(n.y, self.min_y))
-            parent_index = n.parent_index
+    def _calc_final_path(self, goal_node: _JpsNode, closed_set: dict[int, _JpsNode]) -> tuple[list[float], list[float]]:
+        """Build the final path with intermediate cells between jump points.
+
+        JPS only stores jump points in ``closed_set``.  Between consecutive
+        jump points, the path follows one of the 8 grid directions, so we
+        interpolate all intermediate grid cells to produce a dense trajectory
+        that stays on verified-walkable cells.
+        """
+        waypoints: list[tuple[int, int]] = [(goal_node.x, goal_node.y)]
+        idx = goal_node.parent_index
+        while idx != -1:
+            n = closed_set[idx]
+            waypoints.append((n.x, n.y))
+            idx = n.parent_index
+
+        rx, ry = [], []
+        for (cx, cy), (px, py) in zip(waypoints[:-1], waypoints[1:]):
+            ddx = 0 if px == cx else (1 if px > cx else -1)
+            ddy = 0 if py == cy else (1 if py > cy else -1)
+            ix, iy = cx, cy
+            while (ix, iy) != (px, py):
+                rx.append(self.calc_grid_position(ix, self.min_x))
+                ry.append(self.calc_grid_position(iy, self.min_y))
+                ix += ddx
+                iy += ddy
+        lx, ly = waypoints[-1]
+        rx.append(self.calc_grid_position(lx, self.min_x))
+        ry.append(self.calc_grid_position(ly, self.min_y))
         return rx, ry
 
     def calc_grid_position(self, index: int, min_position: float) -> float:
@@ -311,15 +374,7 @@ class JPSPlanner:
         return (y - self.min_y) * self.x_width + (x - self.min_x)
 
     def _check_collision(self, x: float, y: float) -> bool:
-        """True if world position (x,y) is in collision (reuses A* logic)."""
-        node_position = [x, y]
-        shape = {
-            "name": "rectangle",
-            "length": self.resolution,
-            "width": self.resolution,
-        }
-        gf = GeometryFactory.create_geometry(**shape)
-        geometry = gf.step(np.c_[node_position])
-        return any(
-            shapely.intersects(geometry, obj._geometry) for obj in self.obstacle_list
-        )
+        """True if world position (x,y) is in collision (Shapely fallback)."""
+        shape = {"name": "rectangle", "length": self.resolution, "width": self.resolution}
+        geometry = GeometryFactory.create_geometry(**shape).step(np.array([[x, y]]).T)
+        return any(shapely.intersects(geometry, obj._geometry) for obj in self.obstacle_list)

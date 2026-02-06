@@ -13,6 +13,7 @@ During planning you will see:
 """
 
 import numpy as np
+
 import irsim
 from irsim.lib.path_planners import InformedRRTStar
 
