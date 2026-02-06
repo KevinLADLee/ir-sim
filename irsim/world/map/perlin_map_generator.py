@@ -8,10 +8,11 @@ GCOPTER (https://github.com/ZJU-FAST-Lab/GCOPTER). Pure NumPy implementation.
 
 from typing import Optional
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from irsim.util.random import rng, set_seed
+
+from .grid_map_generator_base import GridMapGenerator
 
 # Default gradient vectors for 2D Perlin noise
 # 8 unit vectors pointing in cardinal and diagonal directions
@@ -175,7 +176,7 @@ def generate_perlin_noise(
     return np.clip(noise, 0, 1)
 
 
-class Perlin2dMap:
+class PerlinGridGenerator(GridMapGenerator):
     """Perlin noise based 2D occupancy grid map.
 
     Holds width, height, and a grid of occupancy values (0-100; values > 50
@@ -183,6 +184,17 @@ class Perlin2dMap:
     (https://github.com/ZJU-FAST-Lab/GCOPTER). Output can be saved as PNG
     for use with World.gen_grid_map().
     """
+
+    name = "perlin"
+    yaml_param_names = (
+        "width",
+        "height",
+        "complexity",
+        "fill",
+        "fractal",
+        "attenuation",
+        "seed",
+    )
 
     def __init__(
         self,
@@ -205,6 +217,7 @@ class Perlin2dMap:
             attenuation (float): Amplitude decay per octave. Default 0.5. Larger number means more amplitude decay.
             seed (int | None): Random seed for reproducibility.
         """
+        super().__init__()
         self.width = width
         self.height = height
         self.complexity = complexity
@@ -212,10 +225,9 @@ class Perlin2dMap:
         self.fractal = fractal
         self.attenuation = attenuation
         self.seed = seed
-        self._grid: Optional[np.ndarray] = None
 
-    def generate(self) -> "Perlin2dMap":
-        """Build the occupancy grid from Perlin noise. Returns self."""
+    def _build_grid(self) -> np.ndarray:
+        """Build the occupancy grid from Perlin noise."""
         noise = generate_perlin_noise(
             width=self.width,
             height=self.height,
@@ -228,20 +240,7 @@ class Perlin2dMap:
         idx = int((1.0 - self.fill) * flat.size)
         idx = min(idx, flat.size - 1)
         th = float(flat[idx])
-        self._grid = np.where(noise > th, 100.0, 0.0).astype(np.float64)
-        return self
-
-    @property
-    def grid(self) -> np.ndarray:
-        """Occupancy grid (0-100). Builds on first access if not yet generated."""
-        if self._grid is None:
-            self.generate()
-        assert self._grid is not None
-        return self._grid
-
-    def save_as_image(self, filepath: str, invert: bool = True) -> None:
-        """Save grid as grayscale PNG for use with World.gen_grid_map()."""
-        _save_map_as_image(self.grid, filepath, invert=invert)
+        return np.where(noise > th, 100.0, 0.0).astype(np.float64)
 
     def preview(
         self,
@@ -249,42 +248,15 @@ class Perlin2dMap:
         cmap: str = "gray_r",
     ) -> None:
         """Preview the grid with matplotlib."""
-        _preview_map(self.grid, title=title, cmap=cmap)
+        super().preview(title=title, cmap=cmap)
 
 
-def _save_map_as_image(
-    grid: np.ndarray,
-    filepath: str,
-    invert: bool = True,
-) -> None:
-    """Save occupancy grid as grayscale PNG."""
-    # Normalize to [0, 1] for image saving
-    img = grid / 100.0
-
-    if invert:
-        # Invert so obstacles (100) become dark (0) in the image
-        img = 1.0 - img
-
-    plt.imsave(filepath, img, cmap="gray", vmin=0, vmax=1)
-
-
-def _preview_map(
-    grid: np.ndarray,
-    title: str = "Perlin Grid Map",
-    cmap: str = "gray_r",
-) -> None:
-    """Display the occupancy grid with matplotlib."""
-    plt.figure(figsize=(8, 8))
-    plt.imshow(grid.T, origin="lower", cmap=cmap, vmin=0, vmax=100)
-    plt.colorbar(label="Occupancy (>50 = obstacle)")
-    plt.title(title)
-    plt.xlabel("X")
-    plt.ylabel("Y")
-    plt.show()
+# Backward compatibility alias
+Perlin2dMap = PerlinGridGenerator
 
 
 if __name__ == "__main__":
-    pmap = Perlin2dMap(
+    pmap = PerlinGridGenerator(
         width=200,
         height=200,
         complexity=0.142857,

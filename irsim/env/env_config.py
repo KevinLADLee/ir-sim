@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from operator import attrgetter
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -7,6 +8,7 @@ import yaml
 
 from irsim.util.util import file_check
 from irsim.world import World
+from irsim.world.map import build_grid_from_generator, resolve_obstacle_map
 from irsim.world.object_factory import ObjectFactory
 from irsim.world.object_group import ObjectGroup
 
@@ -79,6 +81,21 @@ class EnvConfig:
                 f"{self.world_name} YAML File not found!, using default world config as alternative."
             )
 
+    def _world_kwargs(self) -> dict[str, Any]:
+        """Build world constructor kwargs from parse['world'].
+
+        grid_generator (legacy) takes precedence; else obstacle_map is
+        resolved via resolve_obstacle_map (path string, spec dict, etc.).
+        """
+        kw = copy.deepcopy(self.parse["world"])
+        grid_gen = kw.pop("grid_generator", None)
+        kw["obstacle_map"] = (
+            build_grid_from_generator(grid_gen)
+            if grid_gen is not None
+            else resolve_obstacle_map(kw.get("obstacle_map"))
+        )
+        return kw
+
     def initialize_objects(self) -> Any:
         """Construct world, objects and plot from the current parsed config.
 
@@ -93,7 +110,7 @@ class EnvConfig:
         world = World(
             self.world_name,
             world_param_instance=self._world_param,
-            **self.parse["world"],
+            **self._world_kwargs(),
         )
 
         robot_collection = self.object_factory.create_from_parse(
@@ -154,7 +171,7 @@ class EnvConfig:
         world = World(
             self.world_name,
             world_param_instance=self._world_param,
-            **self.parse["world"],
+            **self._world_kwargs(),
         )
 
         robot_collection = self.object_factory.create_from_parse(

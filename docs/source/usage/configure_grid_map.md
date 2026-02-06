@@ -84,7 +84,32 @@ obstacle:
 
 ### Important Parameters Explained
 
-To configure the grid map environment, the `obstacle_map` in the `world` section should be specified. The `mdownsample` parameter is used to downsample the image for acceleration. The image of `cave.png` should be placed in the same directory as the python script, and is shown below:
+To configure the grid map environment, use the single key **obstacle_map** in the `world` section:
+
+1. **Default — image file**: Set `obstacle_map` to a path string (e.g. `'cave.png'`). This uses the image generator internally; existing YAMLs need no change. The `mdownsample` parameter downsamples the grid for acceleration.
+2. **Procedural / other generators**: Set `obstacle_map` to an object with `name` and parameters. Example (Perlin):
+
+   ```yaml
+   world:
+     height: 20
+     width: 20
+     mdownsample: 1
+     obstacle_map:
+       name: perlin
+       width: 200
+       height: 200
+       complexity: 0.12
+       fill: 0.32
+       fractal: 1
+       attenuation: 0.5
+       seed: 48   # optional; omit for random map each run
+   ```
+
+   You can also keep using the legacy key ``grid_generator`` (same shape); it is still supported. See ``usage/10grid_map/grid_map_perlin_yaml.yaml`` for examples.
+
+   To add a new generator (e.g. maze), implement a subclass of ``irsim.world.map.GridMapGenerator`` with ``_build_grid()``, set class attributes ``name`` and ``yaml_param_names``, and import it in ``irsim.world.map`` so it registers; then use ``obstacle_map: { name: your_name, ... }`` in YAML.
+
+The image of `cave.png` (when using an image) should be placed in the same directory as the python script, and is shown below:
 
 ```{image} ../cave.png
 :alt: Select Parameters

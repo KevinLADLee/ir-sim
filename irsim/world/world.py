@@ -1,12 +1,9 @@
 import os
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, Union
 
-import matplotlib.image as mpimg
 import numpy as np
 
-from irsim.config.path_param import path_manager as pm
-from irsim.util.util import file_check
-from irsim.world.map import Map
+from irsim.world.map import Map, resolve_obstacle_map
 
 if TYPE_CHECKING:
     from irsim.config.world_param import WorldParam
@@ -25,7 +22,7 @@ class World:
         offset (list): Offset for the world's position.
         control_mode (str): Control mode ('auto' or 'keyboard').
         collision_mode (str): Collision mode ('stop',  , 'unobstructed').
-        obstacle_map: Image file for the obstacle map.
+        obstacle_map: Image path, grid array, or object with ``.grid`` (e.g. GridMapGenerator).
         mdownsample (int): Downsampling factor for the obstacle map.
         status: Status of the world and objects.
         plot: Plot configuration for the world.
@@ -60,7 +57,7 @@ class World:
             offset (list): Offset for the world's position.
             control_mode (str): Control mode ('auto' or 'keyboard').
             collision_mode (str): Collision mode ('stop',  , 'unobstructed').
-            obstacle_map: Image file for the obstacle map.
+            obstacle_map: Image path, grid array, or object with ``.grid`` (e.g. GridMapGenerator).
             mdownsample (int): Downsampling factor for the obstacle map.
             plot (dict): Plot configuration.
             status (str): Initial simulation status.
@@ -121,41 +118,43 @@ class World:
         self._wp.time = self.time
         self._wp.count = self.count
 
-    def gen_grid_map(self, obstacle_map: Optional[str], mdownsample: int = 1) -> tuple:
+    def gen_grid_map(
+        self,
+        obstacle_map: Optional[Union[str, np.ndarray, Any]],
+        mdownsample: int = 1,
+    ) -> tuple:
         """
         Generate a grid map for obstacles.
 
+        Resolution of path strings and generator specs is done by
+        :py:func:`irsim.world.map.resolve_obstacle_map`; this method only
+        turns the resolved value (None, ndarray, or object with ``.grid``)
+        into grid_map and derived indices/positions.
+
         Args:
-            obstacle_map: Path to the obstacle map image.
+            obstacle_map: Passed to resolve_obstacle_map (path, array, spec dict,
+                or generator instance). See :py:func:`irsim.world.map.resolve_obstacle_map`.
             mdownsample (int): Downsampling factor.
 
         Returns:
             tuple: Grid map, obstacle indices, and positions.
         """
-        abs_obstacle_map = file_check(
-            obstacle_map, root_path=pm.root_path + "/world/map"
-        )
+        resolved = resolve_obstacle_map(obstacle_map)
+        if resolved is None:
+            grid_map = None
+        elif isinstance(resolved, np.ndarray):
+            grid_map = np.asarray(resolved, dtype=np.float64)
+        else:
+            grid_map = np.asarray(resolved.grid, dtype=np.float64)
 
-        if abs_obstacle_map is not None:
-            grid_map = mpimg.imread(abs_obstacle_map)
+        if grid_map is not None:
             grid_map = grid_map[::mdownsample, ::mdownsample]
-
-            if len(grid_map.shape) > 2:
-                print("convert to grayscale")
-                grid_map = self.rgb2gray(grid_map)
-
-            grid_map = 100 * (1 - grid_map)  # range: 0 - 100
-            grid_map = np.fliplr(grid_map.T)
-
             x_reso = self.width / grid_map.shape[0]
             y_reso = self.height / grid_map.shape[1]
             self.reso = np.array([[x_reso], [y_reso]])
-
             obstacle_index = np.array(np.where(grid_map > 50))
             obstacle_positions = obstacle_index * self.reso
-
         else:
-            grid_map = None
             obstacle_index = None
             obstacle_positions = None
             self.reso = np.zeros((2, 1))
@@ -197,6 +196,3 @@ class World:
             float: Maximum resolution.
         """
         return np.max(self.reso)
-
-    def rgb2gray(self, rgb: np.ndarray) -> np.ndarray:
-        return np.dot(rgb[..., :3], [0.2989, 0.5870, 0.1140])
