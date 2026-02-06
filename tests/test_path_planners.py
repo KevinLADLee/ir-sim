@@ -1,12 +1,13 @@
 """
 Tests for path planning algorithms.
 
-Covers A*, RRT, RRT*, and PRM planners.
+Covers A*, JPS, RRT, RRT*, and PRM planners.
 """
 
 import pytest
 
 from irsim.lib.path_planners.a_star import AStarPlanner
+from irsim.lib.path_planners.jps import JPSPlanner
 from irsim.lib.path_planners.probabilistic_road_map import PRMPlanner
 from irsim.lib.path_planners.rrt import RRT
 from irsim.lib.path_planners.rrt_star import RRTStar
@@ -16,6 +17,7 @@ from irsim.lib.path_planners.rrt_star import RRTStar
     ("planner_class", "resolution"),
     [
         (AStarPlanner, 0.3),
+        (JPSPlanner, 0.3),
         (RRTStar, 0.3),
         (RRT, 0.3),
         (PRMPlanner, 0.3),

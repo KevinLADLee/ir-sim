@@ -11,6 +11,8 @@ adapted by: Reinis Cimurs
 import math
 from typing import Optional
 
+import numpy as np
+
 from irsim.lib.path_planners.rrt import RRT
 from irsim.world.map import Map
 
@@ -169,15 +171,17 @@ class RRTStar(RRT):
         """
         Search for the best goal node in the current RRT* tree.
 
+        Uses numpy vectorised distance computation for the initial filter.
+
         Returns:
             Optional[int]: Index of the best goal node if found; otherwise ``None``.
         """
-        dist_to_goal_list = [self.calc_dist_to_goal(n.x, n.y) for n in self.node_list]
-        goal_inds = [
-            dist_to_goal_list.index(i)
-            for i in dist_to_goal_list
-            if i <= self.expand_dis
-        ]
+        if not self.node_list:
+            return None
+
+        coords = np.array([[n.x, n.y] for n in self.node_list])
+        dists = np.hypot(coords[:, 0] - self.end.x, coords[:, 1] - self.end.y)
+        goal_inds = list(np.where(dists <= self.expand_dis)[0])
 
         safe_goal_inds = []
         for goal_ind in goal_inds:
@@ -189,22 +193,24 @@ class RRTStar(RRT):
             return None
 
         safe_goal_costs = [
-            self.node_list[i].cost
-            + self.calc_dist_to_goal(self.node_list[i].x, self.node_list[i].y)
+            self.node_list[i].cost + float(dists[i])
             for i in safe_goal_inds
         ]
 
         min_cost = min(safe_goal_costs)
         for i, cost in zip(safe_goal_inds, safe_goal_costs):
             if cost == min_cost:
-                return i
+                return int(i)
 
         return None
 
     def find_near_nodes(self, new_node: "Node") -> list[int]:
         """
         1) defines a ball centered on new_node
-        2) Returns all nodes of the three that are inside this ball
+        2) Returns all nodes of the tree that are inside this ball
+
+        Uses numpy vectorised distance computation for speed.
+
             Args:
                 new_node (Node): new randomly generated node, without collisions between it and its nearest node
 
@@ -217,11 +223,9 @@ class RRTStar(RRT):
         # expand_dist
         if hasattr(self, "expand_dis"):
             r = min(r, self.expand_dis)
-        dist_list = [
-            (node.x - new_node.x) ** 2 + (node.y - new_node.y) ** 2
-            for node in self.node_list
-        ]
-        return [dist_list.index(i) for i in dist_list if i <= r**2]
+        coords = np.array([[n.x, n.y] for n in self.node_list])
+        dists_sq = (coords[:, 0] - new_node.x) ** 2 + (coords[:, 1] - new_node.y) ** 2
+        return list(np.where(dists_sq <= r ** 2)[0])
 
     def rewire(self, new_node: "Node", near_inds: list[int]) -> None:
         """

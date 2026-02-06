@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import copy
 from operator import attrgetter
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -8,7 +7,6 @@ import yaml
 
 from irsim.util.util import file_check
 from irsim.world import World
-from irsim.world.map import build_grid_from_generator, resolve_obstacle_map
 from irsim.world.object_factory import ObjectFactory
 from irsim.world.object_group import ObjectGroup
 
@@ -82,18 +80,14 @@ class EnvConfig:
             )
 
     def _world_kwargs(self) -> dict[str, Any]:
-        """Build world constructor kwargs from parse['world'].
+        """Build world constructor kwargs from the ``world`` section.
 
-        grid_generator (legacy) takes precedence; else obstacle_map is
-        resolved via resolve_obstacle_map (path string, spec dict, etc.).
+        Grid source is a single parameter: ``obstacle_map`` (path string,
+        dict spec e.g. ``{ name: perlin, ... }``, or null). Any unknown key
+        such as ``grid_generator`` is dropped so it is not passed to World.
         """
-        kw = copy.deepcopy(self.parse["world"])
-        grid_gen = kw.pop("grid_generator", None)
-        kw["obstacle_map"] = (
-            build_grid_from_generator(grid_gen)
-            if grid_gen is not None
-            else resolve_obstacle_map(kw.get("obstacle_map"))
-        )
+        kw = dict(self.parse["world"])
+        kw.pop("grid_generator", None)
         return kw
 
     def initialize_objects(self) -> Any:

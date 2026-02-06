@@ -105,7 +105,7 @@ To configure the grid map environment, use the single key **obstacle_map** in th
        seed: 48   # optional; omit for random map each run
    ```
 
-   You can also keep using the legacy key ``grid_generator`` (same shape); it is still supported. See ``usage/10grid_map/grid_map_perlin_yaml.yaml`` for examples.
+   See ``usage/10grid_map/grid_map_perlin.yaml`` and ``grid_map_perlin.py`` for a full example.
 
    To add a new generator (e.g. maze), implement a subclass of ``irsim.world.map.GridMapGenerator`` with ``_build_grid()``, set class attributes ``name`` and ``yaml_param_names``, and import it in ``irsim.world.map`` so it registers; then use ``obstacle_map: { name: your_name, ... }`` in YAML.
 

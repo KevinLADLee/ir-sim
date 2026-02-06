@@ -1,5 +1,5 @@
 import os
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
 
@@ -120,32 +120,25 @@ class World:
 
     def gen_grid_map(
         self,
-        obstacle_map: Optional[Union[str, np.ndarray, Any]],
+        obstacle_map: Optional[Any] = None,
         mdownsample: int = 1,
     ) -> tuple:
-        """
-        Generate a grid map for obstacles.
+        """Generate a grid map for obstacles.
 
-        Resolution of path strings and generator specs is done by
-        :py:func:`irsim.world.map.resolve_obstacle_map`; this method only
-        turns the resolved value (None, ndarray, or object with ``.grid``)
-        into grid_map and derived indices/positions.
+        The *obstacle_map* value (path string, dict spec, ndarray, generator
+        instance, etc.) is resolved to a float64 ndarray by
+        :pyfunc:`irsim.world.map.resolve_obstacle_map`.  This method then
+        applies down-sampling and computes obstacle indices / positions.
 
         Args:
-            obstacle_map: Passed to resolve_obstacle_map (path, array, spec dict,
-                or generator instance). See :py:func:`irsim.world.map.resolve_obstacle_map`.
+            obstacle_map: Anything accepted by
+                :pyfunc:`irsim.world.map.resolve_obstacle_map`.
             mdownsample (int): Downsampling factor.
 
         Returns:
-            tuple: Grid map, obstacle indices, and positions.
+            tuple: ``(grid_map, obstacle_index, obstacle_positions)``.
         """
-        resolved = resolve_obstacle_map(obstacle_map)
-        if resolved is None:
-            grid_map = None
-        elif isinstance(resolved, np.ndarray):
-            grid_map = np.asarray(resolved, dtype=np.float64)
-        else:
-            grid_map = np.asarray(resolved.grid, dtype=np.float64)
+        grid_map = resolve_obstacle_map(obstacle_map)
 
         if grid_map is not None:
             grid_map = grid_map[::mdownsample, ::mdownsample]

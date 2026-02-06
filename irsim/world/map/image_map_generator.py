@@ -5,6 +5,8 @@ Loads an obstacle map from an image file (e.g. PNG) and produces a 0-100
 occupancy grid. Used when obstacle_map in YAML is a string path (default).
 """
 
+from __future__ import annotations
+
 from typing import Any
 
 import matplotlib.image as mpimg

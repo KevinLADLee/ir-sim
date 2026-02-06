@@ -6,11 +6,11 @@ Generates procedural occupancy grids using Perlin noise. Parameter semantics
 GCOPTER (https://github.com/ZJU-FAST-Lab/GCOPTER). Pure NumPy implementation.
 """
 
+from __future__ import annotations
+
 from typing import Optional
 
 import numpy as np
-
-from irsim.util.random import rng, set_seed
 
 from .grid_map_generator_base import GridMapGenerator
 
@@ -60,17 +60,21 @@ def _lerp(a: np.ndarray, b: np.ndarray, t: np.ndarray) -> np.ndarray:
     return a + t * (b - a)
 
 
-def _generate_permutation_table(size: int = 256) -> np.ndarray:
+def _generate_permutation_table(
+    rng_instance: np.random.Generator,
+    size: int = 256,
+) -> np.ndarray:
     """Generate a permutation table for gradient selection.
 
     Args:
+        rng_instance: NumPy random generator (local, not the global one).
         size (int): Size of the permutation table. Default 256.
 
     Returns:
         np.ndarray: Permutation table of shape (size * 2,).
     """
     perm = np.arange(size, dtype=np.int32)
-    rng.shuffle(perm)
+    rng_instance.shuffle(perm)
     return np.concatenate([perm, perm])
 
 
@@ -150,10 +154,8 @@ def generate_perlin_noise(
     Returns:
         np.ndarray: Noise array of shape (width, height), values in [0, 1].
     """
-    if seed is not None:
-        set_seed(seed)
-
-    perm = _generate_permutation_table()
+    local_rng = np.random.default_rng(seed)
+    perm = _generate_permutation_table(local_rng)
 
     x = np.linspace(0, width * complexity, width, endpoint=False)
     y = np.linspace(0, height * complexity, height, endpoint=False)
