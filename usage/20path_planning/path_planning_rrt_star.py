@@ -19,8 +19,8 @@ env_map = env.get_map(resolution=0.1)
 planner = RRTStar(
     env_map,
     robot_radius=0.3,
-    expand_dis=1.5,
-    max_iter=2000,
+    expand_dis=2.0,
+    max_iter=2500,
     search_until_max_iter=False,
 )
 

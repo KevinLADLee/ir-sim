@@ -22,7 +22,7 @@ class World:
         offset (list): Offset for the world's position.
         control_mode (str): Control mode ('auto' or 'keyboard').
         collision_mode (str): Collision mode ('stop',  , 'unobstructed').
-        obstacle_map: Image path, grid array, or object with ``.grid`` (e.g. GridMapGenerator).
+        obstacle_map: ``None``, image path (str), grid ndarray, or generator spec dict.
         mdownsample (int): Downsampling factor for the obstacle map.
         status: Status of the world and objects.
         plot: Plot configuration for the world.
@@ -57,7 +57,7 @@ class World:
             offset (list): Offset for the world's position.
             control_mode (str): Control mode ('auto' or 'keyboard').
             collision_mode (str): Collision mode ('stop',  , 'unobstructed').
-            obstacle_map: Image path, grid array, or object with ``.grid`` (e.g. GridMapGenerator).
+            obstacle_map: ``None``, image path (str), grid ndarray, or generator spec dict.
             mdownsample (int): Downsampling factor for the obstacle map.
             plot (dict): Plot configuration.
             status (str): Initial simulation status.
@@ -127,13 +127,10 @@ class World:
 
         The *obstacle_map* value is resolved to a float64 ndarray by
         :pyfunc:`irsim.world.map.resolve_obstacle_map`.  Accepted types:
-        ``None``, a path string (image file), an ndarray, or a generator spec
-        dict (with ``name`` and ``resolution``).  This method then applies
-        down-sampling and computes obstacle indices / positions.
+        ``None``, path string (image), ndarray, or generator spec dict.
 
         Args:
-            obstacle_map: ``None``, path string, ndarray, or generator spec
-                dict; see :pyfunc:`irsim.world.map.resolve_obstacle_map`.
+            obstacle_map: ``None``, path string, ndarray, or generator spec dict.
             mdownsample (int): Downsampling factor.
 
         Returns:

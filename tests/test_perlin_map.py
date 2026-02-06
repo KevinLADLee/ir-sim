@@ -410,12 +410,11 @@ class TestRNGIsolation:
         _ = generate_perlin_noise(30, 30, seed=42)
         rng_state_after = rng.random()
 
-        # If perlin mutated global rng via set_seed, the second sample
-        # would be deterministic (always the same). Run a second time:
-        rng.random()
+        # If perlin mutated global rng via set_seed, the next sample would be
+        # deterministic. Advance rng and run perlin again.
+        _ = rng.random()
         _ = generate_perlin_noise(30, 30, seed=42)
         rng_state_after2 = rng.random()
 
-        # The global rng should keep advancing independently
-        # (not reset by perlin's seed)
+        # Global rng should keep advancing independently (not reset by perlin)
         assert rng_state_after != rng_state_after2

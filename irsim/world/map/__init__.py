@@ -75,7 +75,6 @@ def resolve_obstacle_map(
         return None
     if isinstance(obstacle_map, np.ndarray):
         return np.asarray(obstacle_map, dtype=np.float64)
-    # Unify str to image generator dict (backward compat)
     if isinstance(obstacle_map, str):
         obstacle_map = {"name": "image", "path": obstacle_map}
     if isinstance(obstacle_map, dict) and obstacle_map.get("name"):

@@ -134,7 +134,7 @@ class JPSPlanner:
         self._map = env_map
         self.resolution = env_map.resolution
         self.min_x, self.min_y = 0, 0
-        self.max_x, self.max_y = env_map.height, env_map.width
+        self.max_x, self.max_y = env_map.width, env_map.height
         self.x_width = round((self.max_x - self.min_x) / self.resolution)
         self.y_width = round((self.max_y - self.min_y) / self.resolution)
         self.obstacle_list = env_map.obstacle_list[:]
@@ -144,7 +144,7 @@ class JPSPlanner:
         start_pose: np.ndarray,
         goal_pose: np.ndarray,
         show_animation: bool = True,
-    ) -> np.ndarray:
+    ) -> np.ndarray | None:
         """
         JPS path search.
 
@@ -154,7 +154,9 @@ class JPSPlanner:
             show_animation (bool): If true, shows the animation of planning process
 
         Returns:
-            np.ndarray: shape (2, N) array [rx, ry] of the final path
+            np.ndarray | None: shape (2, N) array [rx, ry] of the final path, or None
+            if the start or goal cell is not walkable, or if no path exists (open set
+            exhausted).
         """
         sx = self.calc_xy_index(start_pose[0].item(), self.min_x)
         sy = self.calc_xy_index(start_pose[1].item(), self.min_y)

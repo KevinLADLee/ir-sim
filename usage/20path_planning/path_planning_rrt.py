@@ -20,7 +20,8 @@ planner = RRT(
     env_map,
     robot_radius=0.3,
     expand_dis=1.5,
-    max_iter=2000,
+    max_iter=5000,
+    search_until_max_iter=True,
 )
 
 robot_state = env.get_robot_state()
