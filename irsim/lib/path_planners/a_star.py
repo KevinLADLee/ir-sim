@@ -279,12 +279,11 @@ class AStarPlanner:
         Returns:
             ``True`` if a collision is detected.
         """
-        result = self._map.grid_occupied(
+        grid = self._map.grid_occupied(
             x, y, margin_x=self.resolution, margin_y=self.resolution,
         )
-        if result is not None:
-            return result
-        # Shapely fallback
+        if grid is not None:
+            return grid
         node_position = [x, y]
         shape = {
             "name": "rectangle",

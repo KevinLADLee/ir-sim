@@ -447,15 +447,7 @@ class RRT:
 
         Returns *True* if there **is** a collision.
         """
-        grid_hit = self._map.grid_occupied(x, y, margin_x=rr, margin_y=rr)
-        if grid_hit is True:
-            return True
-        if grid_hit is False and not self.obstacle_list:
-            return False
-        moved = shapely_translate(self._collision_circle, xoff=x, yoff=y)
-        return any(
-            shapely.intersects(moved, obj._geometry) for obj in self.obstacle_list
-        )
+        return self._check_point(x, y, rr)
 
     # ------------------------------------------------------------------
     # Visualisation

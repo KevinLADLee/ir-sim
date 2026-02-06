@@ -60,10 +60,13 @@ def resolve_obstacle_map(
 ) -> Optional[np.ndarray]:
     """Resolve obstacle_map to None or a float64 occupancy grid ndarray.
 
-    Accepted types: ``None``, path string (image file), ndarray, or a
-    generator spec dict with ``name`` and ``resolution``.  Generator specs
-    require ``world_width`` and ``world_height``; grid size is computed from
-    world size and ``resolution``.
+    Accepted types: ``None``, ndarray, or a generator spec **dict** with
+    ``name`` (e.g. ``"image"`` or ``"perlin"``).  For backward compatibility,
+    a **str** is treated as ``{"name": "image", "path": obstacle_map}``.
+
+    - ``name == "image"``: only ``path`` is required; grid size comes from the image.
+    - Other names (e.g. ``"perlin"``): require ``resolution`` and world size
+      (``world_width`` / ``world_height``); grid size = world size / resolution.
 
     Returns:
         None, or ndarray (0-100 grid, dtype float64).
@@ -72,13 +75,20 @@ def resolve_obstacle_map(
         return None
     if isinstance(obstacle_map, np.ndarray):
         return np.asarray(obstacle_map, dtype=np.float64)
+    # Unify str to image generator dict (backward compat)
     if isinstance(obstacle_map, str):
-        gen = ImageGridGenerator(path=obstacle_map).generate()
-        return np.asarray(gen.grid, dtype=np.float64)
+        obstacle_map = {"name": "image", "path": obstacle_map}
     if isinstance(obstacle_map, dict) and obstacle_map.get("name"):
+        name = obstacle_map.get("name")
+        if name == "image":
+            path = obstacle_map.get("path")
+            if not path:
+                raise ValueError("obstacle_map image generator requires 'path'.")
+            gen = ImageGridGenerator(path=path).generate()
+            return np.asarray(gen.grid, dtype=np.float64)
         if world_width is None or world_height is None:
             raise ValueError(
-                "obstacle_map generator spec requires world_width and "
+                "obstacle_map generator spec (non-image) requires world_width and "
                 "world_height (passed by World.gen_grid_map)."
             )
         return build_grid_from_generator(
@@ -87,8 +97,7 @@ def resolve_obstacle_map(
             world_height=world_height,
         )
     raise TypeError(
-        "obstacle_map must be None, a path string, an ndarray, or a generator "
-        "spec dict with 'name' and 'resolution'."
+        "obstacle_map must be None, an ndarray, or a generator spec dict with 'name'."
     )
 
 
@@ -228,14 +237,8 @@ class Map:
         gx = int(x / rx)
         gy = int(y / ry)
         rows, cols = self.grid.shape
-        if margin_x > 0:
-            mx = max(1, int(np.ceil(margin_x / rx)))
-        else:
-            mx = 0
-        if margin_y > 0:
-            my = max(1, int(np.ceil(margin_y / ry)))
-        else:
-            my = 0
+        mx = max(1, int(np.ceil(margin_x / rx))) if margin_x > 0 else 0
+        my = max(1, int(np.ceil(margin_y / ry))) if margin_y > 0 else 0
         return bool(
             np.any(
                 self.grid[
