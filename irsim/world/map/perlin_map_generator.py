@@ -164,18 +164,19 @@ def generate_perlin_noise(
     local_rng = np.random.default_rng(seed)
     perm = _generate_permutation_table(local_rng)
 
-    x = np.linspace(0, width * complexity, width, endpoint=False)
-    y = np.linspace(0, height * complexity, height, endpoint=False)
+    x = np.linspace(0, width, width, endpoint=False)
+    y = np.linspace(0, height, height, endpoint=False)
     xx, yy = np.meshgrid(x, y, indexing="ij")
 
     noise = np.zeros((width, height), dtype=np.float64)
     max_amplitude = 0.0
 
     for k in range(fractal):
-        dfv = 2 ** (k + 1)
+        dfv = 2 ** k
         amplitude = attenuation / (k + 1)
+        frequency = complexity * dfv
         noise += amplitude * _perlin_2d(
-            xx * dfv * complexity, yy * dfv * complexity, perm
+            xx * frequency, yy * frequency, perm
         )
         max_amplitude += amplitude
 
