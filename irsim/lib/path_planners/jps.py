@@ -133,10 +133,13 @@ class JPSPlanner:
         """
         self._map = env_map
         self.resolution = env_map.resolution
-        self.min_x, self.min_y = 0, 0
-        self.max_x, self.max_y = env_map.width, env_map.height
-        self.x_width = round((self.max_x - self.min_x) / self.resolution)
-        self.y_width = round((self.max_y - self.min_y) / self.resolution)
+        self.origin_x = float(env_map.world_offset[0])
+        self.origin_y = float(env_map.world_offset[1])
+        self.min_x, self.min_y = 0, 0  # grid indices are 0-based
+        self.max_x = self.origin_x + env_map.width
+        self.max_y = self.origin_y + env_map.height
+        self.x_width = round((self.max_x - self.origin_x) / self.resolution)
+        self.y_width = round((self.max_y - self.origin_y) / self.resolution)
         self.obstacle_list = env_map.obstacle_list[:]
 
     def planning(
@@ -158,11 +161,11 @@ class JPSPlanner:
             if the start or goal cell is not walkable, or if no path exists (open set
             exhausted).
         """
-        sx = self.calc_xy_index(start_pose[0].item(), self.min_x)
-        sy = self.calc_xy_index(start_pose[1].item(), self.min_y)
+        sx = self.calc_xy_index(start_pose[0].item(), self.origin_x)
+        sy = self.calc_xy_index(start_pose[1].item(), self.origin_y)
         start_node = _JpsNode(sx, sy, 0.0, -1, 0, 0)
-        gx = self.calc_xy_index(goal_pose[0].item(), self.min_x)
-        gy = self.calc_xy_index(goal_pose[1].item(), self.min_y)
+        gx = self.calc_xy_index(goal_pose[0].item(), self.origin_x)
+        gy = self.calc_xy_index(goal_pose[1].item(), self.origin_y)
         goal_node = _JpsNode(gx, gy, 0.0, -1)
 
         if not self._is_walkable(start_node.x, start_node.y):
@@ -184,8 +187,8 @@ class JPSPlanner:
 
             if show_animation:  # pragma: no cover
                 plt.plot(
-                    self.calc_grid_position(current.x, self.min_x),
-                    self.calc_grid_position(current.y, self.min_y),
+                    self.calc_grid_position(current.x, self.origin_x),
+                    self.calc_grid_position(current.y, self.origin_y),
                     "xc",
                 )
                 plt.gcf().canvas.mpl_connect(
@@ -298,16 +301,16 @@ class JPSPlanner:
         """True if grid cell (ix, iy) is in bounds and occupied."""
         if ix < 0 or iy < 0 or ix >= self.x_width or iy >= self.y_width:
             return False
-        px = self.calc_grid_position(ix, self.min_x)
-        py = self.calc_grid_position(iy, self.min_y)
+        px = self.calc_grid_position(ix, self.origin_x)
+        py = self.calc_grid_position(iy, self.origin_y)
         return self.is_collision(px, py)
 
     def _is_walkable(self, ix: int, iy: int) -> bool:
         """True if grid cell (ix, iy) is in bounds and not in collision."""
         if ix < 0 or iy < 0 or ix >= self.x_width or iy >= self.y_width:
             return False
-        px = self.calc_grid_position(ix, self.min_x)
-        py = self.calc_grid_position(iy, self.min_y)
+        px = self.calc_grid_position(ix, self.origin_x)
+        py = self.calc_grid_position(iy, self.origin_y)
         return not self.is_collision(px, py)
 
     def _heuristic(self, gx: int, gy: int, x: int, y: int) -> float:
@@ -337,13 +340,13 @@ class JPSPlanner:
             ddy = 0 if py == cy else (1 if py > cy else -1)
             ix, iy = cx, cy
             while (ix, iy) != (px, py):
-                rx.append(self.calc_grid_position(ix, self.min_x))
-                ry.append(self.calc_grid_position(iy, self.min_y))
+                rx.append(self.calc_grid_position(ix, self.origin_x))
+                ry.append(self.calc_grid_position(iy, self.origin_y))
                 ix += ddx
                 iy += ddy
         lx, ly = waypoints[-1]
-        rx.append(self.calc_grid_position(lx, self.min_x))
-        ry.append(self.calc_grid_position(ly, self.min_y))
+        rx.append(self.calc_grid_position(lx, self.origin_x))
+        ry.append(self.calc_grid_position(ly, self.origin_y))
         return rx, ry
 
     def calc_grid_position(self, index: int, min_position: float) -> float:
@@ -353,7 +356,7 @@ class JPSPlanner:
         return round((position - min_pos) / self.resolution)
 
     def calc_grid_index_from_xy(self, x: int, y: int) -> int:
-        return (y - self.min_y) * self.x_width + (x - self.min_x)
+        return y * self.x_width + x
 
     def is_collision(self, x: float, y: float) -> bool:
         """True if world position ``(x, y)`` is in collision.

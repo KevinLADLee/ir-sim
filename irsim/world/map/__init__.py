@@ -45,6 +45,7 @@ class EnvGridMap(Protocol):
     resolution: float
     obstacle_list: list
     grid: np.ndarray | None
+    world_offset: tuple[float, float]
 
     @property
     def grid_resolution(self) -> tuple[float, float] | None:
@@ -215,6 +216,7 @@ class Map:
         resolution: float = 0.1,
         obstacle_list: Optional[list] = None,
         grid: Optional[np.ndarray] = None,
+        world_offset: Optional[tuple[float, float] | list[float]] = None,
     ):
         """
         Initialize the Map.
@@ -225,6 +227,9 @@ class Map:
             resolution: Planner discretisation cell size (metres/cell).
             obstacle_list: Obstacle objects for Shapely collision detection.
             grid: Occupancy grid (0-100) for grid-based collision detection.
+            world_offset: World origin (x, y) for grid indexing. When non-zero,
+                geometry and positions are interpreted in world coordinates so
+                grid lookups align with ObstacleMap. Default (0, 0).
         """
         if obstacle_list is None:
             obstacle_list = []
@@ -233,6 +238,9 @@ class Map:
         self.resolution = resolution
         self.obstacle_list = obstacle_list
         self.grid = grid
+        if world_offset is None:
+            world_offset = (0.0, 0.0)
+        self.world_offset = (float(world_offset[0]), float(world_offset[1]))
         self._obstacles_prepared: bool = False
 
         # Warn when the user-specified resolution diverges from the actual
@@ -287,11 +295,12 @@ class Map:
         gr = self.grid_resolution
         if gr is None:
             return None  # defensive; grid is None already caught above
-        if x < 0 or x >= self.width or y < 0 or y >= self.height:
+        ox, oy = self.world_offset
+        if x < ox or x >= ox + self.width or y < oy or y >= oy + self.height:
             return True  # out-of-bounds: treat as occupied
         rx, ry = gr
-        gx = int(x / rx)
-        gy = int(y / ry)
+        gx = int((x - ox) / rx)
+        gy = int((y - oy) / ry)
         rows, cols = self.grid.shape
         mx = max(1, int(np.ceil(margin_x / rx))) if margin_x > 0 else 0
         my = max(1, int(np.ceil(margin_y / ry))) if margin_y > 0 else 0
@@ -314,11 +323,19 @@ class Map:
              intersection with *obstacle_list*.
         """
         minx, miny, maxx, maxy = geometry.bounds
-        if minx < 0 or miny < 0 or maxx >= self.width or maxy >= self.height:
+        ox, oy = self.world_offset
+        if (
+            minx < ox
+            or miny < oy
+            or maxx >= ox + self.width
+            or maxy >= oy + self.height
+        ):
             return True
         if self.grid is not None:
             gr = self.grid_resolution
-            if gr is not None and _grid_collision_geometry(self.grid, gr, geometry):
+            if gr is not None and _grid_collision_geometry(
+                self.grid, gr, geometry, world_offset=self.world_offset
+            ):
                 return True
         if not self.obstacle_list:
             return False

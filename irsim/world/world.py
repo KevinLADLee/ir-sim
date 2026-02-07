@@ -162,7 +162,15 @@ class World:
         """
         Get the map of the world with the given resolution.
         """
-        return Map(self.width, self.height, resolution, obstacle_list, self.grid_map)
+        world_offset = (float(self.offset[0]), float(self.offset[1]))
+        return Map(
+            self.width,
+            self.height,
+            resolution,
+            obstacle_list,
+            self.grid_map,
+            world_offset=world_offset,
+        )
 
     def reset(self) -> None:
         """

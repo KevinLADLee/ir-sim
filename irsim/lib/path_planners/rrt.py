@@ -103,15 +103,17 @@ class RRT:
     Node = TreeNode
 
     class AreaBounds:
-        """Rectangular play-area bounds."""
+        """Rectangular play-area bounds in world coordinates."""
 
         __slots__ = ("xmin", "ymin", "xmax", "ymax")
 
         def __init__(self, env_map: EnvGridMap) -> None:
-            self.xmin: float = 0.0
-            self.ymin: float = 0.0
-            self.xmax: float = float(env_map.width)
-            self.ymax: float = float(env_map.height)
+            ox = float(env_map.world_offset[0])
+            oy = float(env_map.world_offset[1])
+            self.xmin: float = ox
+            self.ymin: float = oy
+            self.xmax: float = ox + float(env_map.width)
+            self.ymax: float = oy + float(env_map.height)
 
     # ------------------------------------------------------------------
     # Construction
@@ -144,11 +146,13 @@ class RRT:
 
         self._map = env_map
         self.obstacle_list = env_map.obstacle_list[:]
-        self.max_x = float(env_map.width)
-        self.max_y = float(env_map.height)
+        self._origin_x = float(env_map.world_offset[0])
+        self._origin_y = float(env_map.world_offset[1])
         self.play_area = self.AreaBounds(env_map)
-        self.min_rand = 0.0
-        self.max_rand = max(self.max_x, self.max_y)
+        self.max_x = self.play_area.xmax
+        self.max_y = self.play_area.ymax
+        self.min_rand = min(self.play_area.xmin, self.play_area.ymin)
+        self.max_rand = max(self.play_area.xmax, self.play_area.ymax)
         self.expand_dis = expand_dis
         self.path_resolution = path_resolution
         self.goal_sample_rate = goal_sample_rate
