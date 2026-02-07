@@ -2,8 +2,9 @@
 A* grid planning.
 
 Collision precedence:
-  1. Grid lookup (O(1) per cell) when ``env_map.grid`` is not ``None``.
-  2. Shapely geometry intersection when the grid is unavailable.
+  1. Grid lookup when ``env_map.grid`` is not ``None``; if occupied, collision.
+  2. When the grid reports free or is unavailable, Shapely vs. obstacle_list.
+  (Grid and obstacle_list are combined when both are present.)
 
 author: Atsushi Sakai(@Atsushi_twi)
         Nikos Kanargias (nkana@tee.gr)
@@ -19,7 +20,6 @@ import math
 
 import matplotlib.pyplot as plt
 import numpy as np
-import shapely
 
 from irsim.lib.handler.geometry_handler import GeometryFactory
 from irsim.world.map import EnvGridMap
@@ -269,9 +269,6 @@ class AStarPlanner:
     def check_node(self, x: float, y: float) -> bool:
         """Check position for a collision.
 
-        Delegates to :meth:`Map.grid_occupied` when a grid is present;
-        falls back to Shapely intersection otherwise.
-
         Args:
             x: World x coordinate of the cell centre.
             y: World y coordinate of the cell centre.
@@ -279,11 +276,6 @@ class AStarPlanner:
         Returns:
             ``True`` if a collision is detected.
         """
-        grid = self._map.grid_occupied(
-            x, y, margin_x=self.resolution, margin_y=self.resolution,
-        )
-        if grid is not None:
-            return grid
         node_position = [x, y]
         shape = {
             "name": "rectangle",
@@ -292,9 +284,7 @@ class AStarPlanner:
         }
         gf = GeometryFactory.create_geometry(**shape)
         geometry = gf.step(np.c_[node_position])
-        return any(
-            shapely.intersects(geometry, obj._geometry) for obj in self.obstacle_list
-        )
+        return self._map.is_collision(geometry)
 
     @staticmethod
     def get_motion_model() -> list[list[float]]:

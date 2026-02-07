@@ -2,8 +2,9 @@
 Rapidly-exploring Random Tree (RRT) path planner.
 
 Collision precedence:
-  1. Grid lookup (O(1) per cell) when ``env_map.grid`` is not ``None``.
-  2. Shapely geometry intersection when the grid is unavailable.
+  1. Grid lookup when ``env_map.grid`` is not ``None``; if occupied, collision.
+  2. When the grid reports free or is unavailable, Shapely vs. obstacle_list.
+  (Grid and obstacle_list are combined when both are present.)
 
 Reference:
     S. M. LaValle, "Rapidly-Exploring Random Trees: A New Tool for Path
@@ -28,7 +29,6 @@ from typing import TYPE_CHECKING
 
 import matplotlib.pyplot as plt
 import numpy as np
-import shapely
 from shapely import Point as ShapelyPoint
 from shapely.affinity import translate as shapely_translate
 
@@ -303,7 +303,7 @@ class RRT:
             # 4. Bounds + collision
             if not self._check_bounds(new_node.x, new_node.y):
                 continue
-            if not self.check_collision(new_node, self.robot_radius):
+            if not self.is_collision(new_node, self.robot_radius):
                 continue
 
             # 5. Add to tree
@@ -328,7 +328,7 @@ class RRT:
             )
             if dist_to_goal <= self.expand_dis:
                 goal_edge = self.steer(added, self.end, self.expand_dis)
-                if self.check_collision(goal_edge, self.robot_radius):
+                if self.is_collision(goal_edge, self.robot_radius):
                     # For basic RRT, return on the first feasible connection
                     self.end.parent = added
                     self.end.cost_from_parent = dist_to_goal
@@ -405,11 +405,8 @@ class RRT:
         pa = self.play_area
         return pa.xmin <= x <= pa.xmax and pa.ymin <= y <= pa.ymax
 
-    def check_collision(self, node: TreeNode, robot_radius: float) -> bool:
+    def is_collision(self, node: TreeNode, robot_radius: float) -> bool:
         """Check whether *node*'s edge is collision-free.
-
-        Delegates to :meth:`Map.grid_occupied` when a grid is present;
-        falls back to Shapely geometry for non-grid obstacles.
 
         Returns:
             *True* if the path is **collision-free**.
@@ -428,19 +425,13 @@ class RRT:
     def _check_point(self, x: float, y: float, rr: float) -> bool:
         """Single-point collision check.
 
+        Uses grid when present; if grid reports free (or is unavailable),
+        also checks *obstacle_list* via Shapely (combined check).
+
         Returns *True* if a **collision is detected**.
         """
-        # Grid path (fast)
-        grid_hit = self._map.grid_occupied(x, y, margin_x=rr, margin_y=rr)
-        if grid_hit is True:
-            return True
-        if grid_hit is False and not self.obstacle_list:
-            return False
-        # Shapely fallback (or combined when obstacle_list exists alongside grid)
         moved = shapely_translate(self._collision_circle, xoff=x, yoff=y)
-        return any(
-            shapely.intersects(moved, obj._geometry) for obj in self.obstacle_list
-        )
+        return self._map.is_collision(moved)
 
     def check_node(self, x: float, y: float, rr: float) -> bool:
         """Point collision check (legacy API).

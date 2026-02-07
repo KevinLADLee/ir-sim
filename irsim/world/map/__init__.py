@@ -4,10 +4,17 @@ import warnings
 from typing import Any, Optional, Protocol, runtime_checkable
 
 import numpy as np
+import shapely
+from shapely.geometry import Point
 
 from .grid_map_generator_base import GridMapGenerator
 from .image_map_generator import ImageGridGenerator
-from .obstacle_map import ObstacleMap
+from .obstacle_map import (
+    ObstacleMap,
+    CELL_CENTER_OFFSET,
+    COLLISION_RADIUS_FACTOR,
+    OCCUPANCY_THRESHOLD,
+)
 from .perlin_map_generator import PerlinGridGenerator
 
 
@@ -26,8 +33,11 @@ class EnvGridMap(Protocol):
     class to support duck-typed map objects.
 
     Collision precedence (adopted by every planner):
-      1. Grid lookup (O(1) per cell) when *grid* is not ``None``.
-      2. Shapely geometry intersection when *grid* is unavailable.
+      1. Grid lookup (O(1) per cell) when *grid* is not ``None``; if the grid
+         reports occupied, the point is in collision.
+      2. When the grid reports free or is unavailable, Shapely geometry
+         intersection with *obstacle_list* is used.  Planners therefore
+         combine grid and obstacle_list when both are present.
     """
 
     width: float
@@ -51,6 +61,49 @@ class EnvGridMap(Protocol):
     ) -> bool | None:
         """Check if any grid cell within the bounding box is occupied."""
         ...
+
+    def is_collision(self, geometry) -> bool:
+        """Check collision for a Shapely geometry against the map."""
+        ...
+
+
+def _grid_collision_geometry(
+    grid: np.ndarray,
+    grid_reso: tuple[float, float],
+    geometry,
+    world_offset: tuple[float, float] = (0.0, 0.0),
+) -> bool:
+    """Check collision of a Shapely geometry against an occupancy grid.
+
+    Uses the same logic as ObstacleMap.check_grid_collision.
+    """
+    if grid is None:
+        return False
+
+    minx, miny, maxx, maxy = geometry.bounds
+    x_reso, y_reso = grid_reso
+    offset_x, offset_y = world_offset
+
+    i_min = max(0, int((minx - offset_x) / x_reso))
+    i_max = min(grid.shape[0] - 1, int((maxx - offset_x) / x_reso))
+    j_min = max(0, int((miny - offset_y) / y_reso))
+    j_max = min(grid.shape[1] - 1, int((maxy - offset_y) / y_reso))
+
+    if i_min > i_max or j_min > j_max:
+        return False
+
+    collision_radius = max(x_reso, y_reso) * COLLISION_RADIUS_FACTOR
+
+    for i in range(i_min, i_max + 1):
+        for j in range(j_min, j_max + 1):
+            if grid[i, j] > OCCUPANCY_THRESHOLD:
+                cell_x = offset_x + (i + CELL_CENTER_OFFSET) * x_reso
+                cell_y = offset_y + (j + CELL_CENTER_OFFSET) * y_reso
+                cell_center = Point(cell_x, cell_y)
+                if geometry.distance(cell_center) <= collision_radius:
+                    return True
+
+    return False
 
 
 def resolve_obstacle_map(
@@ -225,13 +278,16 @@ class Map:
         Returns:
             ``None`` when no grid is present (caller should fall back to
             Shapely or another collision method).  ``True`` / ``False``
-            otherwise.
+            otherwise.  Points outside the world bounds are treated as
+            occupied so planners cannot escape the map.
         """
         if self.grid is None:
             return None
         gr = self.grid_resolution
         if gr is None:
             return None  # defensive; grid is None already caught above
+        if x < 0 or x >= self.width or y < 0 or y >= self.height:
+            return True  # out-of-bounds: treat as occupied
         rx, ry = gr
         gx = int(x / rx)
         gy = int(y / ry)
@@ -247,6 +303,25 @@ class Map:
                 > threshold
             )
         )
+
+    def is_collision(self, geometry) -> bool:
+        """Check collision for a Shapely geometry against grid + obstacles.
+
+        Collision precedence:
+          1. Grid lookup when *grid* is not None; if occupied, collision.
+          2. When the grid reports free or is unavailable, Shapely geometry
+             intersection with *obstacle_list*.
+        """
+        minx, miny, maxx, maxy = geometry.bounds
+        if minx < 0 or miny < 0 or maxx >= self.width or maxy >= self.height:
+            return True
+        if self.grid is not None:
+            gr = self.grid_resolution
+            if gr is not None and _grid_collision_geometry(self.grid, gr, geometry):
+                return True
+        if not self.obstacle_list:
+            return False
+        return any(shapely.intersects(geometry, obj._geometry) for obj in self.obstacle_list)
 
 
 __all__ = [

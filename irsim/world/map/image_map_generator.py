@@ -41,6 +41,12 @@ class ImageGridGenerator(GridMapGenerator):
         grid_map = mpimg.imread(abs_path)
         if len(grid_map.shape) > 2:
             grid_map = _rgb2gray(grid_map)
+        if np.issubdtype(grid_map.dtype, np.integer):
+            grid_map = grid_map.astype(np.float64) / np.iinfo(grid_map.dtype).max
+        elif grid_map.max() > 1.0:
+            grid_map = grid_map.astype(np.float64) / grid_map.max()
+        else:
+            grid_map = grid_map.astype(np.float64)
         grid_map = 100 * (1 - grid_map)
         grid_map = np.fliplr(grid_map.T)
         return grid_map.astype(np.float64)

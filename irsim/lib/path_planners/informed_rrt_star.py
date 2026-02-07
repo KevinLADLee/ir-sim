@@ -183,7 +183,7 @@ class InformedRRTStar(RRTStar):
             # 4. Check
             if not self._check_bounds(new_node.x, new_node.y):
                 continue
-            if not self.check_collision(new_node, self.robot_radius):
+            if not self.is_collision(new_node, self.robot_radius):
                 continue
 
             # 5. Choose parent
@@ -223,7 +223,7 @@ class InformedRRTStar(RRTStar):
             )
             if dist_to_goal <= self.expand_dis:
                 goal_edge = self.steer(added, self.end, self.expand_dis)
-                if self.check_collision(goal_edge, self.robot_radius):
+                if self.is_collision(goal_edge, self.robot_radius):
                     new_goal_cost = added.cost + dist_to_goal
                     if new_goal_cost < self.end.cost:
                         if not goal_found:

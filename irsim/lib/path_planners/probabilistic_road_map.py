@@ -2,8 +2,9 @@
 Probabilistic Road Map (PRM) Planner.
 
 Collision precedence:
-  1. Grid lookup (O(1) per cell) when ``env_map.grid`` is not ``None``.
-  2. Shapely geometry intersection when the grid is unavailable.
+  1. Grid lookup when ``env_map.grid`` is not ``None``; if occupied, collision.
+  2. When the grid reports free or is unavailable, Shapely vs. obstacle_list.
+  (Grid and obstacle_list are combined when both are present.)
 
 author: Atsushi Sakai (@Atsushi_twi)
 
@@ -18,7 +19,6 @@ from typing import Any, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
-import shapely
 from scipy.spatial import KDTree
 
 from irsim.lib.handler.geometry_handler import GeometryFactory
@@ -139,8 +139,6 @@ class PRMPlanner:
     def check_node(self, x: float, y: float, rr: float) -> bool:
         """Check position for a collision.
 
-        Delegates to :meth:`Map.grid_occupied`; falls back to Shapely.
-
         Args:
             x: World x coordinate.
             y: World y coordinate.
@@ -149,17 +147,11 @@ class PRMPlanner:
         Returns:
             ``True`` if a collision is detected.
         """
-        grid_hit = self._map.grid_occupied(x, y, margin_x=rr, margin_y=rr)
-        if grid_hit is not None:
-            return grid_hit
-        # Shapely fallback
         node_position = [x, y]
         shape = {"name": "circle", "radius": rr}
         gf = GeometryFactory.create_geometry(**shape)
         geometry = gf.step(np.c_[node_position])
-        return any(
-            shapely.intersects(geometry, obj._geometry) for obj in self.obstacle_list
-        )
+        return self._map.is_collision(geometry)
 
     def is_collision(self, sx: float, sy: float, gx: float, gy: float) -> bool:
         """

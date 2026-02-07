@@ -72,7 +72,7 @@ class TestRRTStarEdgeMethods:
         nearest = rrt_star.Node(0.0, 0.0)
         nearest.cost = 0.0
         rrt_star.node_list = [nearest]
-        rrt_star.check_collision = lambda *_args, **_kwargs: False
+        rrt_star.is_collision = lambda *_args, **_kwargs: False
         new_node = rrt_star.Node(1.0, 0.0)
         best_parent, _ = rrt_star._choose_parent(
             new_node, nearest, 0, 1.0, [0]

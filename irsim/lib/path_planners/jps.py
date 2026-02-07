@@ -5,8 +5,9 @@ An optimization of A* for uniform-cost grids that prunes symmetric paths
 and expands "jump points" only, preserving optimality while reducing nodes expanded.
 
 Collision precedence:
-  1. Grid lookup (O(1) per cell) when ``env_map.grid`` is not ``None``.
-  2. Shapely geometry intersection when the grid is unavailable.
+  1. Grid lookup when ``env_map.grid`` is not ``None``; if occupied, collision.
+  2. When the grid reports free or is unavailable, Shapely vs. obstacle_list.
+  (Grid and obstacle_list are combined when both are present.)
 
 References
 ----------
@@ -23,7 +24,6 @@ import math
 from dataclasses import dataclass
 import matplotlib.pyplot as plt
 import numpy as np
-import shapely
 
 from irsim.lib.handler.geometry_handler import GeometryFactory
 from irsim.world.map import EnvGridMap
@@ -300,7 +300,7 @@ class JPSPlanner:
             return False
         px = self.calc_grid_position(ix, self.min_x)
         py = self.calc_grid_position(iy, self.min_y)
-        return self._check_collision(px, py)
+        return self.is_collision(px, py)
 
     def _is_walkable(self, ix: int, iy: int) -> bool:
         """True if grid cell (ix, iy) is in bounds and not in collision."""
@@ -308,7 +308,7 @@ class JPSPlanner:
             return False
         px = self.calc_grid_position(ix, self.min_x)
         py = self.calc_grid_position(iy, self.min_y)
-        return not self._check_collision(px, py)
+        return not self.is_collision(px, py)
 
     def _heuristic(self, gx: int, gy: int, x: int, y: int) -> float:
         """Octile heuristic for 8-directional grid."""
@@ -355,16 +355,9 @@ class JPSPlanner:
     def calc_grid_index_from_xy(self, x: int, y: int) -> int:
         return (y - self.min_y) * self.x_width + (x - self.min_x)
 
-    def _check_collision(self, x: float, y: float) -> bool:
+    def is_collision(self, x: float, y: float) -> bool:
         """True if world position ``(x, y)`` is in collision.
-
-        Delegates to :meth:`Map.grid_occupied`; falls back to Shapely.
         """
-        result = self._map.grid_occupied(
-            x, y, margin_x=self.resolution, margin_y=self.resolution,
-        )
-        if result is not None:
-            return result
         shape = {"name": "rectangle", "length": self.resolution, "width": self.resolution}
         geometry = GeometryFactory.create_geometry(**shape).step(np.array([[x, y]]).T)
-        return any(shapely.intersects(geometry, obj._geometry) for obj in self.obstacle_list)
+        return self._map.is_collision(geometry)

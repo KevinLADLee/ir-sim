@@ -17,6 +17,7 @@ import pytest
 from irsim.world.map import (
     GridMapGenerator,
     ImageGridGenerator,
+    Map,
     PerlinGridGenerator,
     build_grid_from_generator,
     resolve_obstacle_map,
@@ -87,6 +88,18 @@ class TestPerlinNoiseGeneration:
         noise1 = generate_perlin_noise(50, 50, seed=1)
         noise2 = generate_perlin_noise(50, 50, seed=2)
         assert not np.allclose(noise1, noise2)
+
+    def test_fractal_zero_raises(self):
+        """fractal < 1 raises ValueError (avoids 0/0 in normalization)."""
+        with pytest.raises(ValueError, match="fractal must be >= 1"):
+            generate_perlin_noise(10, 10, fractal=0)
+
+    def test_attenuation_zero_raises(self):
+        """attenuation <= 0 raises ValueError."""
+        with pytest.raises(ValueError, match="attenuation must be > 0"):
+            generate_perlin_noise(10, 10, attenuation=0)
+        with pytest.raises(ValueError, match="attenuation must be > 0"):
+            generate_perlin_noise(10, 10, attenuation=-0.1)
 
 
 class TestPerlinMapGeneration:
@@ -225,6 +238,16 @@ class TestEdgeCases:
         """Test generation with many fractal layers."""
         grid = PerlinGridGenerator(50, 50, fractal=8, seed=42).generate().grid
         assert grid.shape == (50, 50)
+
+    def test_fractal_zero_raises_in_generator(self):
+        """PerlinGridGenerator with fractal=0 raises at construction."""
+        with pytest.raises(ValueError, match="fractal must be >= 1"):
+            PerlinGridGenerator(50, 50, fractal=0)
+
+    def test_attenuation_zero_raises_in_generator(self):
+        """PerlinGridGenerator with attenuation <= 0 raises at construction."""
+        with pytest.raises(ValueError, match="attenuation must be > 0"):
+            PerlinGridGenerator(50, 50, attenuation=0)
 
 
 # ---------------------------------------------------------------------------
@@ -418,3 +441,30 @@ class TestRNGIsolation:
 
         # Global rng should keep advancing independently (not reset by perlin)
         assert rng_state_after != rng_state_after2
+
+
+class TestMapGridOccupiedBoundary:
+    """Tests for Map.grid_occupied out-of-bounds behaviour (no false negatives at edges)."""
+
+    def test_upper_boundary_treated_as_occupied(self):
+        """Points at or over width/height are occupied so planners cannot escape."""
+        # 10x10 world, 10x10 grid -> resolution 1.0; all cells free
+        grid = np.zeros((10, 10), dtype=np.float64)
+        m = Map(width=10.0, height=10.0, resolution=1.0, obstacle_list=[], grid=grid)
+        # Just inside: not occupied
+        assert m.grid_occupied(5.0, 5.0) is False
+        assert m.grid_occupied(9.5, 9.5) is False
+        # At/over upper boundary: must be occupied (was false negative before fix)
+        assert m.grid_occupied(10.0, 5.0) is True   # x == width
+        assert m.grid_occupied(5.0, 10.0) is True   # y == height
+        assert m.grid_occupied(10.0, 10.0) is True
+        assert m.grid_occupied(11.0, 5.0) is True
+        assert m.grid_occupied(5.0, 11.0) is True
+
+    def test_lower_boundary_treated_as_occupied(self):
+        """Negative x/y are occupied."""
+        grid = np.zeros((10, 10), dtype=np.float64)
+        m = Map(width=10.0, height=10.0, resolution=1.0, obstacle_list=[], grid=grid)
+        assert m.grid_occupied(-0.1, 5.0) is True
+        assert m.grid_occupied(5.0, -0.1) is True
+        assert m.grid_occupied(-1.0, -1.0) is True

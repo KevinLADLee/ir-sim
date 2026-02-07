@@ -146,14 +146,21 @@ def generate_perlin_noise(
         width (int): Output width in grid cells.
         height (int): Output height in grid cells.
         complexity (float): Base noise frequency. Default 0.142857.
-        fractal (int): Number of octave layers. Default 1.
+        fractal (int): Number of octave layers. Default 1. Must be >= 1.
         attenuation (float): Amplitude for layer k is attenuation / (k + 1).
-            Default 0.5.
+            Default 0.5. Must be > 0.
         seed (int | None): Random seed for reproducibility.
 
     Returns:
         np.ndarray: Noise array of shape (width, height), values in [0, 1].
+
+    Raises:
+        ValueError: If fractal < 1 or attenuation <= 0.
     """
+    if fractal < 1:
+        raise ValueError("fractal must be >= 1 (got %s)" % fractal)
+    if attenuation <= 0:
+        raise ValueError("attenuation must be > 0 (got %s)" % attenuation)
     local_rng = np.random.default_rng(seed)
     perm = _generate_permutation_table(local_rng)
 
@@ -207,10 +214,14 @@ class PerlinGridGenerator(GridMapGenerator):
             height (int): Map height in grid cells.
             complexity (float): Base noise frequency. Default 0.142857.
             fill (float): Obstacle ratio in [0, 1]. Default 0.38.
-            fractal (int): Number of octave layers. Default 1. Larger number means more detailed map.
-            attenuation (float): Amplitude decay per octave. Default 0.5. Larger number means more amplitude decay.
+            fractal (int): Number of octave layers. Default 1. Must be >= 1.
+            attenuation (float): Amplitude decay per octave. Default 0.5. Must be > 0.
             seed (int | None): Random seed for reproducibility.
         """
+        if fractal < 1:
+            raise ValueError("fractal must be >= 1 (got %s)" % fractal)
+        if attenuation <= 0:
+            raise ValueError("attenuation must be > 0 (got %s)" % attenuation)
         super().__init__()
         self.width = width
         self.height = height

@@ -171,7 +171,7 @@ def test_rrt_star_edge_methods():
     assert best_parent is nearest
 
     # _choose_parent: all candidates fail collision returns nearest
-    r.check_collision = lambda *_args, **_kwargs: False  # type: ignore[assignment]
+    r.is_collision = lambda *_args, **_kwargs: False  # type: ignore[assignment]
     best_parent, _ = r._choose_parent(nn, nearest, 0, 1.0, [0])
     assert best_parent is nearest
 
