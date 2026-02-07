@@ -136,7 +136,7 @@ This section outlines the configuration parameters available for the `world` sec
 | `control_mode`   | `str`             | `"auto"`    | Control mode of the simulation. Support mode: `auto` or `keyboard`                                         |
 | `collision_mode` | `str`             | `"stop"`    | Collision handling mode (Support: `"stop"`, `"unobstructed"`, `"unobstructed_obstacles"`)                  |
 | `status`         | `str`             | `"None"`    | Initial status of the simulation environment (Support: `"Running"`, `"Arrived"`, `"Collision"`, `"Pause"`) |
-| `obstacle_map`   | `str`, `ndarray`, `dict`, or `null` | `None`      | Generator spec **dict** (e.g. `{ name: image, path: '…' }` or `{ name: perlin, resolution: 0.1, … }`). String path is shorthand for image generator. See [Configure grid map](usage/configure_grid_map). |
+| `obstacle_map`   | `str`, `ndarray`, `dict`, or `null` | `None`      | Generator spec **dict** (e.g. `{ name: image, path: '…' }` or `{ name: perlin, resolution: 0.1, … }`). String path is shorthand for image generator. See [Configure grid map](configure_grid_map). |
 | `mdownsample`    | `int`             | `1`         | Downsampling factor for the obstacle map to reduce resolution and decrease computational load.             |
 | `plot`           | `dict`            | `{}`        | Plotting options for initializing the plot of the world.                                                   |
 
@@ -202,7 +202,7 @@ This section outlines the configuration parameters available for the `world` sec
 **`obstacle_map`** (`dict`, `str`, `ndarray`, or `null`, default: `None`)
 : Occupancy grid source. **Canonical form is a generator spec dict** with ``name``; other types are convenience/backward compat.
 
-  - **Generator spec** (`dict`): ``name`` identifies the generator. ``name: image`` with ``path`` (e.g. ``'cave.png'``) loads an image; grid size from the image. ``name: perlin`` (and others) require ``resolution``; grid size = world size / resolution. See [Configure grid map](usage/configure_grid_map). To add a new generator, see [Adding a new map generator](usage/configure_grid_map#add-new-map-generator).
+  - **Generator spec** (`dict`): ``name`` identifies the generator. ``name: image`` with ``path`` (e.g. ``'cave.png'``) loads an image; grid size from the image. ``name: perlin`` (and others) require ``resolution``; grid size = world size / resolution. See [Configure grid map](configure_grid_map). To add a new generator, see [Adding a new map generator](configure_grid_map#add-new-map-generator).
   - **Image path** (`str`): Treated as ``{ name: image, path: obstacle_map }`` (backward compat).
   - **Occupancy grid** (`ndarray`): Programmatic use only. Float 0–100; world size must match grid shape.
   - **`null`**: No obstacle map (empty world).
