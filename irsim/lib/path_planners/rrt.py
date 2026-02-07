@@ -1,10 +1,12 @@
 """
 Rapidly-exploring Random Tree (RRT) path planner.
 
-Collision precedence:
+Collision precedence (delegated to ``env_map.is_collision(geometry)``):
   1. Grid lookup when ``env_map.grid`` is not ``None``; if occupied, collision.
-  2. When the grid reports free or is unavailable, Shapely vs. obstacle_list.
-  (Grid and obstacle_list are combined when both are present.)
+  2. When the grid reports free or is unavailable, geometry vs. obstacle_list.
+  The planner builds the robot shape as a geometry (e.g. circle, or polygon for
+  non-circular robots) and calls the unified interface; the map supports any
+  Shapely geometry.
 
 Reference:
     S. M. LaValle, "Rapidly-Exploring Random Trees: A New Tool for Path
@@ -29,10 +31,11 @@ from typing import TYPE_CHECKING
 
 import matplotlib.pyplot as plt
 import numpy as np
-from shapely import Point as ShapelyPoint
-from shapely.affinity import translate as shapely_translate
+from shapely import minimum_bounding_radius
 
+from irsim.util.util import geometry_transform
 from irsim.world.map import EnvGridMap
+from irsim.world.object_base import ObjectBase
 
 if TYPE_CHECKING:
     from matplotlib.lines import Line2D
@@ -117,7 +120,7 @@ class RRT:
     def __init__(
         self,
         env_map: EnvGridMap,
-        robot_radius: float,
+        robot: ObjectBase,
         expand_dis: float = 1.0,
         path_resolution: float = 0.25,
         goal_sample_rate: int = 5,
@@ -125,36 +128,38 @@ class RRT:
     ) -> None:
         """Initialise the RRT planner.
 
+        Robot shape is taken from ``robot.original_geometry`` (e.g. pass
+        ``robot=env.robot``).
+
         Args:
-            env_map: Environment map (any :class:`~irsim.world.map.EnvGridMap`
-                compatible object).
-            robot_radius: Robot body modelled as a circle with this radius.
+            env_map: Environment map (:class:`~irsim.world.map.EnvGridMap`).
+            robot: Robot object; its :attr:`~irsim.world.object_base.ObjectBase.original_geometry` is used for collision.
             expand_dis: Maximum extension distance per steer step.
             path_resolution: Discretisation resolution along steered edges.
             goal_sample_rate: Percentage chance of sampling the goal.
             max_iter: Maximum number of iterations.
         """
+        if robot is None:
+            raise ValueError("robot is required (e.g. robot=env.robot).")
+
         self._map = env_map
         self.obstacle_list = env_map.obstacle_list[:]
-        self.max_x: float = float(env_map.width)
-        self.max_y: float = float(env_map.height)
+        self.max_x = float(env_map.width)
+        self.max_y = float(env_map.height)
         self.play_area = self.AreaBounds(env_map)
-        self.min_rand: float = 0.0
-        self.max_rand: float = max(self.max_x, self.max_y)
+        self.min_rand = 0.0
+        self.max_rand = max(self.max_x, self.max_y)
         self.expand_dis = expand_dis
         self.path_resolution = path_resolution
         self.goal_sample_rate = goal_sample_rate
         self.max_iter = max_iter
-        self.robot_radius = robot_radius
 
-        # Tree state (reset each planning call)
-        self.node_list: list[TreeNode] = []
-        self.start: TreeNode | None = None
-        self.end: TreeNode | None = None
+        self.node_list = []
+        self.start = None
+        self.end = None
 
-        self._collision_circle = ShapelyPoint(0, 0).buffer(robot_radius)
-        for obj in self.obstacle_list:
-            shapely.prepare(obj._geometry)
+        self._collision_geometry = robot.original_geometry
+        self.robot_radius = float(minimum_bounding_radius(self._collision_geometry))
 
         # --- KDTree state ---
         self._kd_coords: np.ndarray | None = None
@@ -303,7 +308,7 @@ class RRT:
             # 4. Bounds + collision
             if not self._check_bounds(new_node.x, new_node.y):
                 continue
-            if not self.is_collision(new_node, self.robot_radius):
+            if not self.is_collision(new_node):
                 continue
 
             # 5. Add to tree
@@ -328,7 +333,7 @@ class RRT:
             )
             if dist_to_goal <= self.expand_dis:
                 goal_edge = self.steer(added, self.end, self.expand_dis)
-                if self.is_collision(goal_edge, self.robot_radius):
+                if self.is_collision(goal_edge):
                     # For basic RRT, return on the first feasible connection
                     self.end.parent = added
                     self.end.cost_from_parent = dist_to_goal
@@ -405,40 +410,35 @@ class RRT:
         pa = self.play_area
         return pa.xmin <= x <= pa.xmax and pa.ymin <= y <= pa.ymax
 
-    def is_collision(self, node: TreeNode, robot_radius: float) -> bool:
+    def is_collision(self, node: TreeNode) -> bool:
         """Check whether *node*'s edge is collision-free.
 
-        Returns:
-            *True* if the path is **collision-free**.
+        Uses :attr:`_collision_geometry` translated to each path point.
+        Returns *True* if the path is **collision-free**.
         """
         if node is None:
             return False
 
-        rr = robot_radius
         # Check each point along the discretised edge
         for px, py in zip(node.path_x, node.path_y):
-            if self._check_point(px, py, rr):
+            if self._check_point(px, py):
                 return False
         # Also check the node endpoint itself
-        return not self._check_point(node.x, node.y, rr)
+        return not self._check_point(node.x, node.y)
 
-    def _check_point(self, x: float, y: float, rr: float) -> bool:
+    def _check_point(self, x: float, y: float, theta: float = 0.0) -> bool:
         """Single-point collision check.
 
-        Uses grid when present; if grid reports free (or is unavailable),
-        also checks *obstacle_list* via Shapely (combined check).
+        Translates :attr:`_collision_geometry` to *(x, y)* with orientation
+        *theta* via :func:`~irsim.util.util.geometry_transform` and calls
+        ``env_map.is_collision(geometry)``. Supports any Shapely geometry
+        (circle, rectangle, polygon, linestring from ir-sim).
 
         Returns *True* if a **collision is detected**.
         """
-        moved = shapely_translate(self._collision_circle, xoff=x, yoff=y)
+        state = np.array([x, y, theta], dtype=float)
+        moved = geometry_transform(self._collision_geometry, state)
         return self._map.is_collision(moved)
-
-    def check_node(self, x: float, y: float, rr: float) -> bool:
-        """Point collision check (legacy API).
-
-        Returns *True* if there **is** a collision.
-        """
-        return self._check_point(x, y, rr)
 
     # ------------------------------------------------------------------
     # Visualisation
@@ -476,11 +476,18 @@ class RRT:
         if rnd is not None:
             (marker,) = ax.plot(rnd.x, rnd.y, "^k")
             self._vis_temp.append(marker)
-            if self.robot_radius > 0.0:
-                circ = self._plot_circle(
-                    rnd.x, rnd.y, self.robot_radius, "-r", ax=ax
-                )
-                self._vis_temp.append(circ)
+            # Draw robot shape at random node (theta=0)
+            state = np.array([rnd.x, rnd.y, 0.0], dtype=float)
+            moved = geometry_transform(self._collision_geometry, state)
+            if hasattr(moved, "exterior"):
+                x_coords, y_coords = moved.exterior.xy
+            elif hasattr(moved, "xy"):
+                x_coords, y_coords = moved.xy
+            else:
+                x_coords, y_coords = [], []
+            if len(x_coords) > 0:
+                (shape_line,) = ax.plot(x_coords, y_coords, "-r", linewidth=0.8)
+                self._vis_temp.append(shape_line)
 
         # Tree edges (single Line2D, updated in-place)
         xs: list[float] = []

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import math
+from typing import Any
 
 import numpy as np
 
@@ -51,7 +52,7 @@ class RRTStar(RRT):
     def __init__(
         self,
         env_map: EnvGridMap,
-        robot_radius: float,
+        robot: Any,
         expand_dis: float = 1.5,
         path_resolution: float = 0.25,
         goal_sample_rate: int = 5,
@@ -59,23 +60,10 @@ class RRTStar(RRT):
         connect_circle_dist: float = 0.5,
         search_until_max_iter: bool = False,
     ) -> None:
-        """Initialise the RRT* planner.
-
-        Args:
-            env_map: Environment map with obstacle information.
-            robot_radius: Robot body radius.
-            expand_dis: Maximum extension distance per steer step.
-            path_resolution: Discretisation resolution along edges.
-            goal_sample_rate: Goal-bias percentage.
-            max_iter: Maximum iterations.
-            connect_circle_dist: Base radius parameter for the near-node
-                ball used in parent selection and rewiring.
-            search_until_max_iter: If *True*, keep optimising until
-                ``max_iter`` even after finding a feasible path.
-        """
+        """Initialise the RRT* planner."""
         super().__init__(
             env_map,
-            robot_radius,
+            robot,
             expand_dis,
             path_resolution,
             goal_sample_rate,
@@ -133,7 +121,7 @@ class RRTStar(RRT):
             # 4. Bounds + collision
             if not self._check_bounds(new_node.x, new_node.y):
                 continue
-            if not self.is_collision(new_node, self.robot_radius):
+            if not self.is_collision(new_node):
                 continue
 
             # 5. Choose best parent from neighbours
@@ -174,7 +162,7 @@ class RRTStar(RRT):
             )
             if dist_to_goal <= self.expand_dis:
                 goal_edge = self.steer(added, self.end, self.expand_dis)
-                if self.is_collision(goal_edge, self.robot_radius):
+                if self.is_collision(goal_edge):
                     new_goal_cost = added.cost + dist_to_goal
                     if new_goal_cost < self.end.cost:
                         if not goal_found:
@@ -250,7 +238,7 @@ class RRTStar(RRT):
                 continue
 
             edge = self.steer(candidate, new_node)
-            if self.is_collision(edge, self.robot_radius):
+            if self.is_collision(edge):
                 best_parent = candidate
                 best_cost = potential_cost
                 best_cost_fp = d
@@ -279,7 +267,7 @@ class RRTStar(RRT):
                 continue
 
             edge = self.steer(new_node, candidate)
-            if not self.is_collision(edge, self.robot_radius):
+            if not self.is_collision(edge):
                 continue
 
             self._change_node_parent(candidate, new_node, d)

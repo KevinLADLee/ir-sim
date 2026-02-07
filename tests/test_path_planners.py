@@ -31,11 +31,13 @@ def test_path_planners(planner_class, resolution, env_factory):
     env_map = env.get_map(resolution=resolution)
     if planner_class in (AStarPlanner, JPSPlanner):
         planner = planner_class(env_map)
+    elif planner_class in (RRT, RRTStar, InformedRRTStar):
+        planner = planner_class(env_map, robot=env.robot)
     else:
         planner = planner_class(env_map, robot_radius=resolution)
-    robot_info = env.get_robot_info()
     robot_state = env.get_robot_state()
-    trajectory = planner.planning(robot_state, robot_info.goal)
+    goal_pose = env.robot.goal[:2, 0].tolist()
+    trajectory = planner.planning(robot_state, goal_pose)
     env.draw_trajectory(trajectory, traj_type="r-")
     assert trajectory is not None
 
@@ -48,9 +50,8 @@ class TestRRTStarEdgeMethods:
         """Create RRT* planner for testing."""
         env = env_factory("test_collision_world.yaml", full=False)
         env_map = env.get_map()
-        r = RRTStar(env_map=env_map, robot_radius=0.5)
+        r = RRTStar(env_map=env_map, robot=env.robot)
         r.node_list = []
-        r.robot_radius = 0.5
         r.expand_dis = 1.0
         return r
 
@@ -99,32 +100,30 @@ class TestRRTStarCoverage:
         env_map = env.get_map()
         planner = RRTStar(
             env_map=env_map,
-            robot_radius=0.3,
+            robot=env.robot,
             max_iter=10,
             search_until_max_iter=True,
         )
         robot_state = env.get_robot_state()
-        robot_info = env.get_robot_info()
-        _ = planner.planning(robot_state, robot_info.goal, show_animation=False)
+        _ = planner.planning(
+            robot_state, env.robot.goal[:2, 0].tolist(), show_animation=False
+        )
 
     def test_planning_no_show_animation(self, env_factory):
         """Test planning without animation (branches at 112-113, 116-117)."""
         env = env_factory("test_collision_world.yaml", full=False)
         env_map = env.get_map()
-        planner = RRTStar(
-            env_map=env_map,
-            robot_radius=0.3,
-            max_iter=10,
-        )
+        planner = RRTStar(env_map=env_map, robot=env.robot, max_iter=10)
         robot_state = env.get_robot_state()
-        robot_info = env.get_robot_info()
-        _ = planner.planning(robot_state, robot_info.goal, show_animation=False)
+        _ = planner.planning(
+            robot_state, env.robot.goal[:2, 0].tolist(), show_animation=False
+        )
 
     def test_choose_parent_valid_path(self, env_factory):
         """Test _choose_parent with valid candidate."""
         env = env_factory("test_collision_world.yaml", full=False)
         env_map = env.get_map()
-        planner = RRTStar(env_map=env_map, robot_radius=0.3)
+        planner = RRTStar(env_map=env_map, robot=env.robot)
 
         start_node = planner.Node(0.0, 0.0)
         start_node.cost = 0.0
@@ -143,7 +142,7 @@ class TestRRTStarCoverage:
         """Test _rewire when cost improvement occurs."""
         env = env_factory("test_collision_world.yaml", full=False)
         env_map = env.get_map()
-        planner = RRTStar(env_map=env_map, robot_radius=0.1)
+        planner = RRTStar(env_map=env_map, robot=env.robot)
 
         node0 = planner.Node(0.0, 0.0)
         node0.cost = 0.0

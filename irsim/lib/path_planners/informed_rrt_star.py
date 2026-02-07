@@ -32,7 +32,7 @@ from __future__ import annotations
 import logging
 import math
 import random
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -63,7 +63,7 @@ class InformedRRTStar(RRTStar):
     def __init__(
         self,
         env_map: EnvGridMap,
-        robot_radius: float,
+        robot: Any,
         expand_dis: float = 1.5,
         path_resolution: float = 0.25,
         goal_sample_rate: int = 10,
@@ -71,23 +71,10 @@ class InformedRRTStar(RRTStar):
         connect_circle_dist: float = 50.0,
         search_until_max_iter: bool = True,
     ) -> None:
-        """Initialise the Informed RRT* planner.
-
-        Args:
-            env_map: Environment map.
-            robot_radius: Robot body radius.
-            expand_dis: Max extension distance per steer step.
-            path_resolution: Discretisation resolution along edges.
-            goal_sample_rate: Goal-bias percentage (used before any
-                feasible path is found).
-            max_iter: Maximum iteration count.
-            connect_circle_dist: Connection / rewiring radius parameter.
-            search_until_max_iter: Always keep optimising until ``max_iter``
-                (Informed RRT* always does this).
-        """
+        """Initialise the Informed RRT* planner."""
         super().__init__(
             env_map,
-            robot_radius,
+            robot,
             expand_dis,
             path_resolution,
             goal_sample_rate,
@@ -183,7 +170,7 @@ class InformedRRTStar(RRTStar):
             # 4. Check
             if not self._check_bounds(new_node.x, new_node.y):
                 continue
-            if not self.is_collision(new_node, self.robot_radius):
+            if not self.is_collision(new_node):
                 continue
 
             # 5. Choose parent
@@ -223,7 +210,7 @@ class InformedRRTStar(RRTStar):
             )
             if dist_to_goal <= self.expand_dis:
                 goal_edge = self.steer(added, self.end, self.expand_dis)
-                if self.is_collision(goal_edge, self.robot_radius):
+                if self.is_collision(goal_edge):
                     new_goal_cost = added.cost + dist_to_goal
                     if new_goal_cost < self.end.cost:
                         if not goal_found:

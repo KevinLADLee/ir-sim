@@ -233,6 +233,7 @@ class Map:
         self.resolution = resolution
         self.obstacle_list = obstacle_list
         self.grid = grid
+        self._obstacles_prepared: bool = False
 
         # Warn when the user-specified resolution diverges from the actual
         # grid cell size by more than 5 %.
@@ -321,6 +322,10 @@ class Map:
                 return True
         if not self.obstacle_list:
             return False
+        if not self._obstacles_prepared:
+            for obj in self.obstacle_list:
+                shapely.prepare(obj._geometry)
+            self._obstacles_prepared = True
         return any(shapely.intersects(geometry, obj._geometry) for obj in self.obstacle_list)
 
 

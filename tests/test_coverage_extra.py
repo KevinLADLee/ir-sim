@@ -156,10 +156,8 @@ def test_rrt_star_edge_methods():
         "test_collision_world.yaml", save_ani=False, full=False, display=False
     )
     env_map = env.get_map()
-    r = RRTStar(env_map=env_map, robot_radius=0.5)
-    # Monkeypatch required attributes/methods
+    r = RRTStar(env_map=env_map, robot=env.robot)
     r.node_list = []
-    r.robot_radius = 0.5
     r.expand_dis = 1.0
 
     # _choose_parent: empty near indices returns nearest
