@@ -80,7 +80,7 @@ class InformedRRTStar(RRTStar):
             goal_sample_rate,
             max_iter,
             connect_circle_dist,
-            search_until_max_iter=True,
+            search_until_max_iter=search_until_max_iter,
         )
 
         # -- informed-sampling state --
