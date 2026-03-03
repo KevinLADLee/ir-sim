@@ -542,6 +542,9 @@ class Lidar2D:
             alpha (float): The transparency of the lasers. Default is 0.3.
         """
 
+        if not hasattr(self, "laser_LineCollection"):
+            return
+
         current_color = [self.color] * self.number
         current_alpha = [self.alpha] * self.number
 

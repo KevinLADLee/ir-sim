@@ -143,6 +143,7 @@ class EnvBase:
         log_file: str | None = None,
         log_level: str = "INFO",
         seed: int | None = None,
+        rerun: bool = False,
     ) -> None:
         # Bind per-instance config objects
         self._env_param = EnvParam()
@@ -182,7 +183,7 @@ class EnvBase:
             self._obstacle_collection,
             self._map_collection,
             self._object_groups,
-        ) = self.env_config.initialize_objects()
+        ) = self.env_config.initialize_objects(disable_plot=self.disable_all_plot)
 
         # Wire env reference to all objects for param access
         self._wire_env_to_objects()
@@ -203,7 +204,10 @@ class EnvBase:
             self._world_param.control_mode = "auto"
 
         mouse_config = self.env_config.parse["gui"].get("mouse", {})
-        self.mouse = MouseControl(self._env_plot.ax, **mouse_config)
+        if self._env_plot is not None:
+            self.mouse = MouseControl(self._env_plot.ax, **mouse_config)
+        else:
+            self.mouse = None
 
         # flag for keyboard control
         self.pause_flag = False
@@ -214,10 +218,25 @@ class EnvBase:
         self.reload_flag = False
         self.save_figure_flag = False
 
-        if full:
+        if full and self._env_plot is not None:
             mng = plt.get_current_fig_manager()
             if mng is not None:
                 mng.full_screen_toggle()
+
+        # Rerun visualisation (optional sidecar)
+        self._rerun_logger = None  # public via .rerun_logger property
+        if rerun:
+            try:
+                from irsim.env.rerun_logger import RerunLogger
+
+                self._rerun_logger = RerunLogger(self._world, self._objects)
+            except ImportError:
+                self.logger.error(
+                    "rerun-sdk is not installed. "
+                    "Install with: pip install 'ir-sim[rerun]'"
+                )
+            except Exception as e:
+                self.logger.error(f"Failed to initialise Rerun logger: {e}")
 
         # Log simulation start
         self.logger.info(
@@ -417,6 +436,10 @@ class EnvBase:
 
             self._env_plot.step(mode, self.objects, **kwargs)
 
+        # Rerun sidecar visualisation
+        if self._rerun_logger is not None and self._world.sampling:
+            self._rerun_logger.step(self.objects, self._world)
+
         if self.save_figure_flag:
             self.save_figure(save_gif=True, **figure_kwargs)
             self.save_figure_flag = False
@@ -431,8 +454,8 @@ class EnvBase:
         """
         Show the environment figure.
         """
-
-        self._env_plot.show()
+        if self._env_plot is not None:
+            self._env_plot.show()
 
     # draw various components
     def draw_trajectory(
@@ -448,8 +471,10 @@ class EnvBase:
             **kwargs: Additional keyword arguments; forwarded to
                 :py:meth:`.EnvPlot.draw_trajectory`.
         """
-
-        self._env_plot.draw_trajectory(traj, traj_type, **kwargs)
+        if self._env_plot is not None:
+            self._env_plot.draw_trajectory(traj, traj_type, **kwargs)
+        if self._rerun_logger is not None:
+            self._rerun_logger.draw_trajectory(traj, traj_type)
 
     def draw_points(
         self,
@@ -471,8 +496,10 @@ class EnvBase:
             **kwargs: Additional keyword arguments, forwarded to
                 `Axes.scatter <https://matplotlib.org/stable/api/_as_gen/matplotlib.axes.Axes.scatter.html>`_.
         """
-
-        self._env_plot.draw_points(points, s, c, refresh, **kwargs)
+        if self._env_plot is not None:
+            self._env_plot.draw_points(points, s, c, refresh, **kwargs)
+        if self._rerun_logger is not None:
+            self._rerun_logger.draw_points(points, s, c)
 
     def draw_box(
         self, vertex: np.ndarray, refresh: bool = False, color: str = "-b"
@@ -485,7 +512,8 @@ class EnvBase:
             refresh (bool): Whether to clear previous boxes before drawing. Default is False.
             color (str): Line style/color for the box (e.g., "-b").
         """
-        self._env_plot.draw_box(vertex, refresh, color)
+        if self._env_plot is not None:
+            self._env_plot.draw_box(vertex, refresh, color)
 
     def draw_quiver(self, point: Any, refresh: bool = False, **kwargs: Any) -> None:
         """
@@ -497,7 +525,8 @@ class EnvBase:
             refresh (bool): Whether to clear previous quiver before drawing. Default False.
             **kwargs: Additional keyword arguments for drawing the quiver.
         """
-        self._env_plot.draw_quiver(point, refresh, **kwargs)
+        if self._env_plot is not None:
+            self._env_plot.draw_quiver(point, refresh, **kwargs)
 
     def draw_quivers(self, points: Any, refresh: bool = False, **kwargs: Any) -> None:
         """
@@ -509,7 +538,8 @@ class EnvBase:
             refresh (bool): Whether to clear previous quivers before drawing. Default False.
             **kwargs: Additional keyword arguments for drawing the quivers.
         """
-        self._env_plot.draw_quivers(points, refresh, **kwargs)
+        if self._env_plot is not None:
+            self._env_plot.draw_quivers(points, refresh, **kwargs)
 
     def end(self, ending_time: float = 3.0, **kwargs: Any) -> None:
         """
@@ -521,6 +551,14 @@ class EnvBase:
         """
 
         if self.disable_all_plot:
+            # Clean up Rerun if active
+            if self._rerun_logger is not None:
+                import time
+
+                time.sleep(ending_time)
+                self._rerun_logger.close()
+            self._env_param.objects = []
+            ObjectBase.reset_id_iter()
             return
 
         if self.save_ani:
@@ -538,6 +576,10 @@ class EnvBase:
         plt.close("all")
         self._env_param.objects = []
         ObjectBase.reset_id_iter()
+
+        # Clean up Rerun if active
+        if self._rerun_logger is not None:
+            self._rerun_logger.close()
 
         if hasattr(self, "keyboard"):
             # Stop pynput listener if present; otherwise disconnect MPL callbacks
@@ -728,6 +770,8 @@ class EnvBase:
         Re-initializes drawing on the current figure/axes using the existing
         ``EnvPlot`` instance; does not create a new figure window.
         """
+        if self._env_plot is None:
+            return
 
         self._env_plot.clear_components("all", self.objects)
         self._env_plot._init_plot(self._world, self.objects)
@@ -774,7 +818,8 @@ class EnvBase:
                         existing_obj.append(obj)
                         break
 
-        self._env_plot.step("all", self.obstacle_list)
+        if self._env_plot is not None:
+            self._env_plot.step("all", self.obstacle_list)
 
     def random_polygon_shape(
         self,
@@ -835,7 +880,8 @@ class EnvBase:
                 geom = Polygon(vertices_list[i])
                 obj.set_original_geometry(geom)
 
-        self._env_plot.step("all", self.obstacle_list)
+        if self._env_plot is not None:
+            self._env_plot.step("all", self.obstacle_list)
 
     def reload(self, world_name: str | None = None) -> None:
         """
@@ -850,7 +896,8 @@ class EnvBase:
         """
         ObjectBase.reset_id_iter()
         self.reset()
-        self._env_plot.clear_components("all", self.objects)
+        if self._env_plot is not None:
+            self._env_plot.clear_components("all", self.objects)
         (
             self._world,
             self._objects,
@@ -1086,8 +1133,8 @@ class EnvBase:
         """
         Set the title of the plot.
         """
-
-        self._env_plot.title = title
+        if self._env_plot is not None:
+            self._env_plot.title = title
 
     def set_random_seed(self, seed: int | None = None, reload: bool = False) -> None:
         """
@@ -1141,9 +1188,10 @@ class EnvBase:
         else:
             file_name, file_format = file_save_name.rsplit(".", 1)
 
-        self._env_plot.save_figure(
-            file_name, file_format, include_index, save_gif, **kwargs
-        )
+        if self._env_plot is not None:
+            self._env_plot.save_figure(
+                file_name, file_format, include_index, save_gif, **kwargs
+            )
 
     def load_behavior(self, behaviors: str = "behavior_methods") -> None:
         """
@@ -1380,5 +1428,10 @@ class EnvBase:
     def object_factory(self) -> ObjectFactory:
         """Get the object factory of the environment."""
         return self.env_config.object_factory
+
+    @property
+    def rerun_logger(self) -> Any:
+        """Get the Rerun logger (or ``None`` if Rerun is not active)."""
+        return self._rerun_logger
 
     # endregion: property

@@ -39,7 +39,8 @@ dependencies = [
 
 [project.optional-dependencies]
 keyboard = ['pynput']
-all = ['pynput', 'imageio[ffmpeg]', 'pyrvo']
+rerun = ['rerun-sdk']
+all = ['pynput', 'imageio[ffmpeg]', 'pyrvo', 'rerun-sdk']
 
 [dependency-groups]
 docs = [

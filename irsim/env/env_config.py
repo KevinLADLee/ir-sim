@@ -91,8 +91,13 @@ class EnvConfig:
         """World constructor kwargs from the ``world`` section."""
         return dict(self.parse["world"])
 
-    def initialize_objects(self) -> Any:
+    def initialize_objects(self, disable_plot: bool = False) -> Any:
         """Construct world, objects and plot from the current parsed config.
+
+        Args:
+            disable_plot (bool): If ``True``, skip creating the ``EnvPlot``
+                (and therefore the matplotlib figure) entirely.  The returned
+                ``env_plot`` element will be ``None``.
 
         Returns:
             Tuple: ``(world, objects, env_plot, robot_collection, obstacle_collection, map_collection)``
@@ -137,7 +142,7 @@ class EnvConfig:
             for gid in group_ids
         ]
 
-        env_plot = EnvPlot(world, objects)
+        env_plot = None if disable_plot else EnvPlot(world, objects)
 
         # cache for in-place reload
         self._env_plot = env_plot
@@ -197,8 +202,9 @@ class EnvConfig:
         ]
 
         # env_plot = EnvPlot(world, objects, **world.plot_parse)
-        self._env_plot.clear_components("all", self._objects)
-        self._env_plot._init_plot(world, objects)
+        if self._env_plot is not None:
+            self._env_plot.clear_components("all", self._objects)
+            self._env_plot._init_plot(world, objects)
 
         return (
             world,

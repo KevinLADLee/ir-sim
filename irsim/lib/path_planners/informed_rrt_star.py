@@ -108,6 +108,7 @@ class InformedRRTStar(RRTStar):
         start_pose: list[float],
         goal_pose: list[float],
         show_animation: bool = True,
+        draw_callback: Any | None = None,
     ) -> np.ndarray | None:
         """Informed RRT* path planning.
 
@@ -116,6 +117,10 @@ class InformedRRTStar(RRTStar):
             goal_pose: Goal position ``[x, y]``.
             show_animation: Render tree, ellipse and best path during
                 planning.
+            draw_callback: Optional ``callback(planner, iteration)``
+                called every few iterations for external visualisation
+                (e.g. Rerun).  The callback receives the planner instance
+                and the current iteration index.
 
         Returns:
             ``(2, N)`` waypoint array or *None*.
@@ -264,8 +269,11 @@ class InformedRRTStar(RRTStar):
                         )
 
             # 10. Draw (throttled)
-            if show_animation and (i % 10 == 0 or i == self.max_iter - 1):
-                self._draw_informed(i)
+            if i % 10 == 0 or i == self.max_iter - 1:
+                if show_animation:
+                    self._draw_informed(i)
+                if draw_callback is not None:
+                    draw_callback(self, i)
 
         # -- summary --
         if self._best_path is not None:

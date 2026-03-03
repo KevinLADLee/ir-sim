@@ -2,7 +2,7 @@ import numpy as np
 
 import irsim
 
-env = irsim.make()
+env = irsim.make(disable_all_plot=True, rerun=True)
 
 for i in range(300):
     env.step()

@@ -17,7 +17,9 @@ import numpy as np
 import irsim
 from irsim.lib.path_planners import InformedRRTStar
 
-env = irsim.make("path_planning.yaml", save_ani=False, full=False)
+env = irsim.make(
+    "path_planning.yaml", save_ani=False, full=False, disable_all_plot=True, rerun=True
+)
 
 env_map = env.get_map(resolution=0.1)
 planner = InformedRRTStar(
@@ -32,7 +34,12 @@ planner = InformedRRTStar(
 robot_state = env.get_robot_state()
 robot_info = env.get_robot_info()
 goal_xy = robot_info.goal[:2, 0].tolist()
-trajectory = planner.planning(robot_state, goal_xy, show_animation=True)
+
+# Pass Rerun callback so the tree, ellipse and best path are drawn live
+rr_callback = env.rerun_logger.make_planner_callback() if env.rerun_logger else None
+trajectory = planner.planning(
+    robot_state, goal_xy, show_animation=False, draw_callback=rr_callback
+)
 
 if trajectory is not None:
     env.draw_trajectory(np.array(trajectory), traj_type="r-")
