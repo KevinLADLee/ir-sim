@@ -83,6 +83,12 @@ class PRMPlanner:
         self._map = env_map
         self.rr = robot_radius
         self.obstacle_list = env_map.obstacle_list[:]
+
+        # Cached geometry factory for Shapely fallback — avoids re-creation
+        # per check_node call.
+        self._collision_gf = GeometryFactory.create_geometry(
+            name="circle", radius=robot_radius
+        )
         off = np.asarray(env_map.world_offset, dtype=float).flatten()
         self.min_x = float(off[0])
         self.min_y = float(off[1])
@@ -137,6 +143,10 @@ class PRMPlanner:
     def check_node(self, x: float, y: float, rr: float) -> bool:
         """Check position for a collision.
 
+        Uses ``grid_occupied`` for O(1) grid lookup when a grid is present.
+        When *grid* and *obstacle_list* coexist the method checks **both**
+        explicitly — they represent independent collision sources.
+
         Args:
             x: World x coordinate.
             y: World y coordinate.
@@ -145,11 +155,13 @@ class PRMPlanner:
         Returns:
             ``True`` if a collision is detected.
         """
-        node_position = [x, y]
-        shape = {"name": "circle", "radius": rr}
-        gf = GeometryFactory.create_geometry(**shape)
-        geometry = gf.step(np.c_[node_position])
-        return self._map.is_collision(geometry)
+        grid_result = self._map.grid_occupied(x, y, margin_x=rr, margin_y=rr)
+        if grid_result is True:
+            return True
+        if self._map.obstacle_list:
+            geometry = self._collision_gf.step(np.c_[[x, y]])
+            return self._map.is_collision(geometry)
+        return False
 
     def is_collision(self, sx: float, sy: float, gx: float, gy: float) -> bool:
         """
@@ -271,9 +283,11 @@ class PRMPlanner:
                 # for stopping simulation with the esc key.
                 plt.gcf().canvas.mpl_connect(
                     "key_release_event",
-                    lambda event: plt.close(event.canvas.figure)
-                    if event.key == "escape"
-                    else None,
+                    lambda event: (
+                        plt.close(event.canvas.figure)
+                        if event.key == "escape"
+                        else None
+                    ),
                 )
                 plt.plot(current.x, current.y, "xg")
                 plt.pause(0.001)

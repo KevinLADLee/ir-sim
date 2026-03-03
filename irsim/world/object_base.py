@@ -429,10 +429,12 @@ class ObjectBase:
         self.collision_obj = []
         self.plot_trail_list = []
 
+        # Set by EnvBase._check_all_collisions to skip redundant per-object
+        # collision re-computation inside check_collision_status().
+        self._collision_resolved: bool = False
+
         # validate unknown kwargs
-        check_unknown_kwargs(
-            kwargs, self._VALID_PARAMS, context=f" in '{role}' config"
-        )
+        check_unknown_kwargs(kwargs, self._VALID_PARAMS, context=f" in '{role}' config")
 
     def __eq__(self, o: "ObjectBase") -> bool:
         if isinstance(o, ObjectBase):
@@ -575,10 +577,16 @@ class ObjectBase:
         """
         Check if the object is in collision with other objects in the environment.
 
-        This method queries possible collision objects from the geometry tree and
-        checks for intersections. It logs collision warnings for robots and updates
-        the collision_flag and collision_obj list.
+        When called from :meth:`EnvBase._status_step`, collision data has
+        already been populated by :meth:`EnvBase._check_all_collisions`
+        (indicated by ``_collision_resolved == True``), so this method
+        returns immediately to avoid redundant O(N) per-object queries.
+
+        Direct external calls still perform the full per-object check.
         """
+        if self._collision_resolved:
+            return
+
         collision_flags = []
         self.collision_obj = []
 
@@ -1427,7 +1435,7 @@ class ObjectBase:
 
                 elif attr == "fov_patch":
                     # Update FOV patch using set_element_property
-                    if isinstance(element, (Wedge, Circle)):
+                    if isinstance(element, Wedge | Circle):
                         direction = r_phi if self.state_dim >= 3 else 0
                         fov_state = np.array([[x], [y], [direction]])
 

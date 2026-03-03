@@ -168,6 +168,12 @@ class JPSPlanner:
             self.y_width = round((self.max_y - self.origin_y) / self.resolution)
         self.obstacle_list = env_map.obstacle_list[:]
 
+        # Cached geometry factory for Shapely fallback — avoids re-creation
+        # per is_collision call.
+        self._collision_gf = GeometryFactory.create_geometry(
+            name="rectangle", length=self.resolution, width=self.resolution
+        )
+
     def planning(
         self,
         start_pose: np.ndarray,
@@ -208,9 +214,11 @@ class JPSPlanner:
         while open_set:
             c_id = min(
                 open_set,
-                key=lambda o: open_set[o].cost
-                + self._heuristic(
-                    goal_node.x, goal_node.y, open_set[o].x, open_set[o].y
+                key=lambda o: (
+                    open_set[o].cost
+                    + self._heuristic(
+                        goal_node.x, goal_node.y, open_set[o].x, open_set[o].y
+                    )
                 ),
             )
             current = open_set[c_id]
@@ -223,9 +231,11 @@ class JPSPlanner:
                 )
                 plt.gcf().canvas.mpl_connect(
                     "key_release_event",
-                    lambda event: plt.close(event.canvas.figure)
-                    if event.key == "escape"
-                    else None,
+                    lambda event: (
+                        plt.close(event.canvas.figure)
+                        if event.key == "escape"
+                        else None
+                    ),
                 )
                 if len(closed_set) % 10 == 0:
                     plt.pause(0.01)
@@ -395,11 +405,17 @@ class JPSPlanner:
         return y * self.x_width + x
 
     def is_collision(self, x: float, y: float) -> bool:
-        """True if world position ``(x, y)`` is in collision."""
-        shape = {
-            "name": "rectangle",
-            "length": self.resolution,
-            "width": self.resolution,
-        }
-        geometry = GeometryFactory.create_geometry(**shape).step(np.array([[x, y]]).T)
-        return self._map.is_collision(geometry)
+        """True if world position ``(x, y)`` is in collision.
+
+        Uses ``grid_occupied`` for O(1) grid lookup when a grid is present.
+        When *grid* and *obstacle_list* coexist the method checks **both**
+        explicitly — they represent independent collision sources.
+        """
+        half = self.resolution * 0.5
+        grid_result = self._map.grid_occupied(x, y, margin_x=half, margin_y=half)
+        if grid_result is True:
+            return True
+        if self._map.obstacle_list:
+            geometry = self._collision_gf.step(np.array([[x, y]]).T)
+            return self._map.is_collision(geometry)
+        return False

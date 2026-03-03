@@ -62,6 +62,13 @@ class AStarPlanner:
             self.y_width = round((self.max_y - self.origin_y) / self.resolution)
         self.motion = self.get_motion_model()
 
+        # Cached geometry factory for Shapely fallback — avoids re-creation
+        # per check_node call.  Used only when grid is absent or obstacle_list
+        # coexists with the grid (see check_node).
+        self._collision_gf = GeometryFactory.create_geometry(
+            name="rectangle", length=self.resolution, width=self.resolution
+        )
+
     class Node:
         """Node class"""
 
@@ -133,8 +140,9 @@ class AStarPlanner:
 
             c_id = min(
                 open_set,
-                key=lambda o: open_set[o].cost
-                + self.calc_heuristic(goal_node, open_set[o]),
+                key=lambda o: (
+                    open_set[o].cost + self.calc_heuristic(goal_node, open_set[o])
+                ),
             )
             current = open_set[c_id]
 
@@ -148,9 +156,11 @@ class AStarPlanner:
                 # for stopping simulation with the esc key.
                 plt.gcf().canvas.mpl_connect(
                     "key_release_event",
-                    lambda event: plt.close(event.canvas.figure)
-                    if event.key == "escape"
-                    else None,
+                    lambda event: (
+                        plt.close(event.canvas.figure)
+                        if event.key == "escape"
+                        else None
+                    ),
                 )
                 if len(closed_set.keys()) % 10 == 0:
                     plt.pause(0.001)
@@ -291,6 +301,11 @@ class AStarPlanner:
     def check_node(self, x: float, y: float) -> bool:
         """Check position for a collision.
 
+        Uses ``grid_occupied`` for O(1) grid lookup when a grid is present.
+        When *grid* and *obstacle_list* coexist the method checks **both**
+        explicitly — grid occupied cells and Shapely obstacle geometries —
+        because they represent independent collision sources.
+
         Args:
             x: World x coordinate of the cell centre.
             y: World y coordinate of the cell centre.
@@ -298,15 +313,16 @@ class AStarPlanner:
         Returns:
             ``True`` if a collision is detected.
         """
-        node_position = [x, y]
-        shape = {
-            "name": "rectangle",
-            "length": self.resolution,
-            "width": self.resolution,
-        }
-        gf = GeometryFactory.create_geometry(**shape)
-        geometry = gf.step(np.c_[node_position])
-        return self._map.is_collision(geometry)
+        half = self.resolution * 0.5
+        grid_result = self._map.grid_occupied(x, y, margin_x=half, margin_y=half)
+        if grid_result is True:
+            return True
+        # grid_result is None → no grid; grid_result is False → grid says free.
+        # In either case check obstacle_list when present.
+        if self._map.obstacle_list:
+            geometry = self._collision_gf.step(np.c_[[x, y]])
+            return self._map.is_collision(geometry)
+        return False
 
     @staticmethod
     def get_motion_model() -> list[list[float]]:

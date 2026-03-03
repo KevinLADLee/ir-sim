@@ -1029,8 +1029,11 @@ class TestStatusArrived:
                 obj.arrive_flag = True
                 obj.collision_flag = False
 
-        # Patch check_status on base class to prevent collision re-detection
-        with mock_patch.object(ObjectBase, "check_status", lambda self: None):
+        # Patch check_status and centralised collision to freeze state
+        with (
+            mock_patch.object(ObjectBase, "check_status", lambda self: None),
+            mock_patch.object(type(env), "_check_all_collisions", lambda self: None),
+        ):
             env._status_step()
         assert env.status == "Arrived"
 
@@ -1042,7 +1045,10 @@ class TestStatusArrived:
 
         env = env_factory("test_collision_world.yaml")
         env.save_figure_flag = True
-        with mock_patch.object(ObjectBase, "check_status", lambda self: None):
+        with (
+            mock_patch.object(ObjectBase, "check_status", lambda self: None),
+            mock_patch.object(type(env), "_check_all_collisions", lambda self: None),
+        ):
             env._status_step()
         assert env.status == "Save Figure"
 
@@ -1054,6 +1060,9 @@ class TestStatusArrived:
 
         env = env_factory("test_collision_world.yaml")
         env.quit_flag = True
-        with mock_patch.object(ObjectBase, "check_status", lambda self: None):
+        with (
+            mock_patch.object(ObjectBase, "check_status", lambda self: None),
+            mock_patch.object(type(env), "_check_all_collisions", lambda self: None),
+        ):
             env._status_step()
         assert env.status == "Quit"

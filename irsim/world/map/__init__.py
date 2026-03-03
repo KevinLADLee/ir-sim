@@ -5,8 +5,9 @@ from typing import Any, Optional, Protocol, Union, runtime_checkable
 
 import numpy as np
 import shapely
-from shapely.geometry import Point
+from shapely.strtree import STRtree
 
+from ._grid_utils import grid_collision
 from .grid_map_generator_base import GridMapGenerator
 from .image_map_generator import ImageGridGenerator
 from .obstacle_map import (
@@ -111,40 +112,17 @@ def _downsample_occupancy_grid(
 def _grid_collision_geometry(
     grid: np.ndarray,
     grid_reso: tuple[float, float],
-    geometry,
+    geometry: shapely.Geometry,
     world_offset: tuple[float, float] = (0.0, 0.0),
 ) -> bool:
     """Check collision of a Shapely geometry against an occupancy grid.
 
-    Uses the same logic as ObstacleMap.check_grid_collision.
+    Thin wrapper around :func:`._grid_utils.grid_collision` which uses
+    vectorised NumPy + Shapely 2.x ufuncs.
     """
     if grid is None:
         return False
-
-    minx, miny, maxx, maxy = geometry.bounds
-    x_reso, y_reso = grid_reso
-    offset_x, offset_y = world_offset
-
-    i_min = max(0, int((minx - offset_x) / x_reso))
-    i_max = min(grid.shape[0] - 1, int((maxx - offset_x) / x_reso))
-    j_min = max(0, int((miny - offset_y) / y_reso))
-    j_max = min(grid.shape[1] - 1, int((maxy - offset_y) / y_reso))
-
-    if i_min > i_max or j_min > j_max:
-        return False
-
-    collision_radius = max(x_reso, y_reso) * COLLISION_RADIUS_FACTOR
-
-    for i in range(i_min, i_max + 1):
-        for j in range(j_min, j_max + 1):
-            if grid[i, j] > OCCUPANCY_THRESHOLD:
-                cell_x = offset_x + (i + CELL_CENTER_OFFSET) * x_reso
-                cell_y = offset_y + (j + CELL_CENTER_OFFSET) * y_reso
-                cell_center = Point(cell_x, cell_y)
-                if geometry.distance(cell_center) <= collision_radius:
-                    return True
-
-    return False
+    return grid_collision(grid, grid_reso, geometry, world_offset=world_offset)
 
 
 def resolve_obstacle_map(
@@ -283,6 +261,14 @@ class Map:
         self.world_offset = (float(world_offset[0]), float(world_offset[1]))
         self._obstacles_prepared: bool = False
 
+        # Spatial index for obstacle_list — avoids O(N) linear scan.
+        if obstacle_list:
+            self._obstacle_tree: STRtree | None = STRtree(
+                [obj._geometry for obj in obstacle_list]
+            )
+        else:
+            self._obstacle_tree = None
+
         # Warn when the user-specified resolution diverges from the actual
         # grid cell size by more than 5 %.
         if grid is not None:
@@ -377,15 +363,15 @@ class Map:
                 self.grid, gr, geometry, world_offset=self.world_offset
             ):
                 return True
-        if not self.obstacle_list:
+        if not self.obstacle_list or self._obstacle_tree is None:
             return False
-        if not self._obstacles_prepared:
-            for obj in self.obstacle_list:
-                shapely.prepare(obj._geometry)
-            self._obstacles_prepared = True
-        return any(
-            shapely.intersects(geometry, obj._geometry) for obj in self.obstacle_list
+        candidate_idx = self._obstacle_tree.query(geometry)
+        if len(candidate_idx) == 0:
+            return False
+        candidate_geoms = np.array(
+            [self.obstacle_list[i]._geometry for i in candidate_idx], dtype=object
         )
+        return bool(np.any(shapely.intersects(geometry, candidate_geoms)))
 
 
 __all__ = [

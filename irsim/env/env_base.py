@@ -17,6 +17,7 @@ from typing import Any
 
 import matplotlib
 import numpy as np
+import shapely
 from matplotlib import pyplot as plt
 from shapely import Polygon
 from shapely.strtree import STRtree
@@ -609,6 +610,78 @@ class EnvBase:
             return any(done_list)
         return None
 
+    def _check_all_collisions(self) -> None:
+        """Centralised collision detection — eliminates symmetric duplicate checks.
+
+        For N non-map, non-unobstructed objects the narrowphase runs at most
+        N*(N-1)/2 pair checks instead of N² (each pair ``(i, j)`` where
+        ``i < j`` is tested once and the result written to both sides).
+
+        Map objects are checked separately: each non-map object is tested
+        against every map object (single-direction, no symmetry to exploit).
+        """
+        tree = self._env_param.GeometryTree
+        objects = self._env_param.objects
+
+        # Reset collision state for all objects.
+        for obj in objects:
+            obj.collision_obj = []
+            obj.collision_flag = False
+
+        if tree is None:
+            return
+
+        # Partition objects into maps and non-maps.
+        map_objects = [obj for obj in objects if obj.shape == "map"]
+        collidable = [
+            obj for obj in objects if not obj.unobstructed and obj.shape != "map"
+        ]
+
+        # id(obj) → index in `objects` list (same indexing as STRtree).
+        obj_to_tree_idx: dict[int, int] = {id(o): i for i, o in enumerate(objects)}
+
+        # --- Non-map x non-map: symmetric pair check (i < j) ---
+        n = len(collidable)
+        for i in range(n):
+            a = collidable[i]
+            # STRtree query gives candidate indices (into the *full* objects list).
+            candidate_idx = tree.query(a.geometry)
+            candidate_set = set(candidate_idx.tolist())
+            for j in range(i + 1, n):
+                b = collidable[j]
+                if b.id == a.id:
+                    continue
+                # Only run narrowphase if b was in a's broadphase candidates.
+                if obj_to_tree_idx[id(b)] not in candidate_set:
+                    continue
+                if shapely.intersects(a.geometry, b._geometry):
+                    a.collision_obj.append(b)
+                    b.collision_obj.append(a)
+                    if a.role == "robot" and not a.collision_flag:
+                        a.logger.warning(
+                            f"{a.name} collided with {b.name} at state "
+                            f"{np.round(a.state[:3, 0], 2).tolist()}"
+                        )
+                    if b.role == "robot" and not b.collision_flag:
+                        b.logger.warning(
+                            f"{b.name} collided with {a.name} at state "
+                            f"{np.round(b.state[:3, 0], 2).tolist()}"
+                        )
+                    a.collision_flag = True
+                    b.collision_flag = True
+
+        # --- Non-map x map: each non-map object vs every map ---
+        for obj in collidable:
+            for m in map_objects:
+                if m.is_collision(obj.geometry):
+                    obj.collision_obj.append(m)
+                    if obj.role == "robot" and not obj.collision_flag:
+                        obj.logger.warning(
+                            f"{obj.name} collided with {m.name} at state "
+                            f"{np.round(obj.state[:3, 0], 2).tolist()}"
+                        )
+                    obj.collision_flag = True
+
     def _status_step(self) -> None:
         """
         Update and log the current status of all robots in the environment.
@@ -622,8 +695,22 @@ class EnvBase:
             The status information is automatically updated during simulation steps.
         """
 
-        # object status step
-        [obj.check_status() for obj in self.objects]
+        # Centralised collision detection — each non-map pair checked at most
+        # once, map objects checked per-object (single direction).
+        # Populates collision_obj / collision_flag on every object.
+        self._check_all_collisions()
+
+        # Per-object: arrival + collision-mode logic.
+        # check_status() would normally call check_collision_status() again;
+        # the _collision_resolved flag tells it to skip re-computation and
+        # reuse the results from _check_all_collisions.
+        try:
+            for obj in self.objects:
+                obj._collision_resolved = True
+            [obj.check_status() for obj in self.objects]
+        finally:
+            for obj in self.objects:
+                obj._collision_resolved = False
 
         arrive_list = [obj.arrive for obj in self.objects if obj.role == "robot"]
         collision_list = [obj.collision for obj in self.objects if obj.role == "robot"]
