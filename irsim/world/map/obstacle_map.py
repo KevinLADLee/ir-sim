@@ -41,6 +41,7 @@ class ObstacleMap(ObjectBase):
         """
         if shape is None:
             shape = {"name": "map", "reso": "0.1", "points": None}
+        kwargs.setdefault("participates_in_lifecycle", False)
         super().__init__(
             shape=shape,
             role="obstacle",

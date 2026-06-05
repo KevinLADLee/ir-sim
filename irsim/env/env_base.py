@@ -362,8 +362,8 @@ class EnvBase:
         [obj.step() for obj in self.objects if obj._id != obj_id]
 
     def _objects_check_status(self) -> None:
-        """Refresh per-object status flags (e.g., arrival, collision)."""
-        [obj.check_status() for obj in self.objects]
+        """Refresh lifecycle object status flags (e.g., arrival, collision)."""
+        [obj.check_status() for obj in self.lifecycle_objects]
 
     def _assign_keyboard_action(self, action: list[Any]) -> list[Any]:
         """
@@ -660,7 +660,7 @@ class EnvBase:
         """
 
         # object status step
-        [obj.check_status() for obj in self.objects]
+        [obj.check_status() for obj in self.lifecycle_objects]
 
         arrive_list = [obj.arrive for obj in self.objects if obj.role == "robot"]
         collision_list = [obj.collision for obj in self.objects if obj.role == "robot"]
@@ -1324,6 +1324,21 @@ class EnvBase:
             list: List of all objects in the environment.
         """
         return self._objects
+
+    @property
+    def lifecycle_objects(self) -> list[ObjectBase]:
+        """
+        Get objects that participate in per-tick lifecycle status updates.
+
+        Passive spatial targets, such as grid-backed obstacle maps, remain in
+        ``objects`` for collision, sensing, and rendering but are not scheduled
+        for lifecycle status updates.
+        """
+        return [
+            obj
+            for obj in self.objects
+            if getattr(obj, "participates_in_lifecycle", True)
+        ]
 
     @property
     def static_objects(self) -> list[ObjectBase]:

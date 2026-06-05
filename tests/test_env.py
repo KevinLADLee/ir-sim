@@ -1013,10 +1013,102 @@ class TestObjectsCheckStatus:
     """Test _objects_check_status method (line 363)."""
 
     def test_objects_check_status(self, env_factory):
-        """_objects_check_status calls check_status on all objects (line 363)."""
+        """_objects_check_status calls check_status on lifecycle objects."""
         env = env_factory("test_collision_world.yaml")
         env._objects_check_status()
         # No exception means it works
+
+    def test_grid_map_excluded_from_lifecycle_status(self, env_factory, monkeypatch):
+        """ObstacleMap stays spatially registered but skips lifecycle status."""
+        env = env_factory("test_grid_map.yaml")
+        obstacle_map = env._map_collection[0]
+
+        assert obstacle_map in env.objects
+        assert obstacle_map in env._map_collection
+        assert obstacle_map not in env.lifecycle_objects
+        assert env.robot in env.lifecycle_objects
+        assert all(obj in env.lifecycle_objects for obj in env._obstacle_collection)
+
+        candidate_indices = env._env_param.GeometryTree.query(obstacle_map.geometry)
+        assert any(
+            env.objects[int(index)] is obstacle_map for index in candidate_indices
+        )
+
+        calls = {"map": 0, "robot": 0}
+        original_robot_check_status = env.robot.check_status
+
+        def map_check_status():
+            calls["map"] += 1
+
+        def robot_check_status():
+            calls["robot"] += 1
+            return original_robot_check_status()
+
+        monkeypatch.setattr(obstacle_map, "check_status", map_check_status)
+        monkeypatch.setattr(env.robot, "check_status", robot_check_status)
+
+        env._objects_check_status()
+
+        assert calls["map"] == 0
+        assert calls["robot"] == 1
+
+    def test_grid_map_collision_still_detected_by_robot(self, env_factory):
+        """Passive map layers remain collision targets for robot lifecycle checks."""
+        env = env_factory("test_grid_map.yaml")
+        obstacle_map = env._map_collection[0]
+        occupied = np.argwhere(obstacle_map.grid_map > 50)
+        i, j = occupied[0]
+        x_reso = obstacle_map.grid_reso[0, 0]
+        y_reso = obstacle_map.grid_reso[1, 0]
+        offset_x, offset_y = obstacle_map.world_offset
+        state = env.robot.state.copy()
+        state[0, 0] = offset_x + (i + 0.5) * x_reso
+        state[1, 0] = offset_y + (j + 0.5) * y_reso
+
+        env.robot.set_state(state)
+        env.build_tree()
+        env._status_step()
+
+        assert env.robot.collision is True
+        assert obstacle_map in env.robot.collision_obj
+        assert env.status == "Collision"
+
+    def test_grid_map_collision_after_env_step(self, env_factory):
+        """Robot-map collision is still checked during a full env step."""
+        env = env_factory("test_grid_map.yaml")
+        obstacle_map = env._map_collection[0]
+        occupied = np.argwhere(obstacle_map.grid_map > 50)
+        i, j = occupied[0]
+        x_reso = obstacle_map.grid_reso[0, 0]
+        y_reso = obstacle_map.grid_reso[1, 0]
+        offset_x, offset_y = obstacle_map.world_offset
+        state = env.robot.state.copy()
+        state[0, 0] = offset_x + (i + 0.5) * x_reso
+        state[1, 0] = offset_y + (j + 0.5) * y_reso
+
+        env.robot.set_state(state)
+        env.build_tree()
+        env.step(np.zeros(env.robot.vel_shape))
+
+        assert env.robot.collision is True
+        assert obstacle_map in env.robot.collision_obj
+        assert env.status == "Collision"
+
+    def test_grid_map_lidar_visible_before_and_after_step(self, env_factory):
+        """Passive map layers remain sensor targets across step updates."""
+        env = env_factory("test_grid_map.yaml")
+        env._objects_sensor_step()
+        before_scan = env.get_lidar_scan()
+        before = before_scan["ranges"].copy()
+
+        env.step(np.zeros(env.robot.vel_shape))
+        after_scan = env.get_lidar_scan()
+        after = after_scan["ranges"]
+
+        assert np.any(np.isfinite(before))
+        assert np.any(before < before_scan["range_max"])
+        assert np.any(np.isfinite(after))
+        assert np.any(after < after_scan["range_max"])
 
     def test_object_step_deprecated(self, env_factory):
         """_object_step with action (line 358)."""
