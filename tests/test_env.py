@@ -13,7 +13,12 @@ import numpy as np
 import pytest
 
 import irsim
-from irsim.env.env_base import EnvBase
+from irsim.env import env_base as env_base_module
+from irsim.env.env_base import (
+    EnvBase,
+    _is_interactive_matplotlib_backend,
+    _matplotlib_backend_name,
+)
 
 
 class TestEnvironmentCreation:
@@ -361,6 +366,70 @@ class TestEnvironmentFlags:
 
 class TestSimulationLoop:
     """Tests for simulation step and render loop."""
+
+    @pytest.mark.parametrize(
+        ("backend", "normalized"),
+        [
+            ("Agg", "agg"),
+            ("TkAgg", "tkagg"),
+            ("QtAgg", "qtagg"),
+            ("module://matplotlib_inline.backend_inline", "inline"),
+            ("module://matplotlib.backends.backend_agg", "agg"),
+            ("module://ipympl.backend_nbagg", "nbagg"),
+        ],
+    )
+    def test_matplotlib_backend_name_normalization(self, backend, normalized):
+        """Backend normalization handles builtin and module backends."""
+        assert _matplotlib_backend_name(backend) == normalized
+
+    @pytest.mark.parametrize(
+        ("backend", "expected"),
+        [
+            ("Agg", False),
+            ("PDF", False),
+            ("SVG", False),
+            ("module://matplotlib_inline.backend_inline", False),
+            ("TkAgg", True),
+            ("QtAgg", True),
+            ("Qt5Agg", True),
+            ("module://ipympl.backend_nbagg", True),
+        ],
+    )
+    def test_matplotlib_backend_interactivity_detection(self, backend, expected):
+        """Only interactive matplotlib backends should receive GUI pauses."""
+        assert _is_interactive_matplotlib_backend(backend) is expected
+
+    def test_render_skips_pause_on_noninteractive_backend(
+        self, env_factory, monkeypatch
+    ):
+        """Headless/Agg rendering updates plots without a GUI pause."""
+        env = env_factory("test_collision_world.yaml", display=True)
+        monkeypatch.setattr(env_base_module.matplotlib, "get_backend", lambda: "Agg")
+
+        with patch.object(env_base_module.plt, "pause") as mock_pause:
+            env.render(0.01)
+
+        mock_pause.assert_not_called()
+
+    def test_render_pauses_on_interactive_backend(self, env_factory, monkeypatch):
+        """Interactive backends still pump the GUI event loop."""
+        env = env_factory("test_collision_world.yaml", display=True)
+        monkeypatch.setattr(env_base_module.matplotlib, "get_backend", lambda: "TkAgg")
+
+        with patch.object(env_base_module.plt, "pause") as mock_pause:
+            env.render(0.01)
+
+        mock_pause.assert_called_once_with(0.01)
+
+    def test_end_skips_pause_on_noninteractive_backend(self, env_factory, monkeypatch):
+        """Headless/Agg shutdown should not wait for a GUI window."""
+        env = env_factory("test_collision_world.yaml", display=True)
+        monkeypatch.setattr(env_base_module.matplotlib, "get_backend", lambda: "Agg")
+
+        with patch.object(env_base_module.plt, "pause") as mock_pause:
+            env.end(3.0)
+
+        mock_pause.assert_not_called()
 
     @pytest.mark.parametrize("projection", ["2d", "3d"])
     def test_basic_simulation_loop(self, env_factory, projection):

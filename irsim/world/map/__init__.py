@@ -9,6 +9,7 @@ from shapely.geometry import Point
 
 from .grid_map_generator_base import GridMapGenerator
 from .image_map_generator import ImageGridGenerator
+from .maze_map_generator import MazeGridGenerator
 from .obstacle_map import (
     CELL_CENTER_OFFSET,
     COLLISION_RADIUS_FACTOR,
@@ -393,6 +394,7 @@ __all__ = [
     "GridMapGenerator",
     "ImageGridGenerator",
     "Map",
+    "MazeGridGenerator",
     "ObstacleMap",
     "PerlinGridGenerator",
     "build_grid_from_generator",

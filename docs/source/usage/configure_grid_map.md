@@ -153,6 +153,33 @@ world:
 Full example: ``usage/10grid_map/grid_map_perlin.yaml`` and ``grid_map_perlin.py``.
 
 
+### Maze escape generator (``name: maze``)
+
+Procedural orthogonal maze map for escape tasks. The generated map has a free center room for the robot start and a carved exit on the outer boundary. Grid size is determined by world size and ``resolution``. The ``rows`` and ``cols`` parameters control the logical maze topology, while ``resolution`` controls the final occupancy-grid cell size.
+
+**YAML:**
+
+```yaml
+world:
+  height: 20
+  width: 20
+  obstacle_map:
+    name: maze
+    resolution: 0.1
+    rows: 16
+    cols: 16
+    exit: bottom_left
+    goal_area: center
+    goal_rows: 2
+    goal_cols: 2
+    seed: 42
+```
+
+**Parameters** (see ``irsim.world.map.MazeGridGenerator``): ``rows``, ``cols``, ``exit``, ``goal_area``, ``goal_rows``, ``goal_cols``, ``seed`` (optional). ``exit`` supports ``bottom_left``, ``bottom_right``, ``top_left`` and ``top_right``. The legacy ``entrance`` key is still accepted as an alias. Currently ``goal_area`` supports ``center`` and represents the center free room.
+
+Full example: ``usage/10grid_map/grid_map_maze.yaml`` and ``grid_map_maze.py``.
+
+
 ## Downsampling (``mdownsample``)
 
 ``mdownsample`` is an integer (default 1) applied to the generated grid: the grid is subsampled by this factor (e.g. 2 → every 2×2 block becomes one cell). Use it to reduce resolution and speed up collision checks. Only applies when an obstacle map is present.

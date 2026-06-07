@@ -48,6 +48,38 @@ BACKEND_PREFERENCES = {
     "Linux": ["TkAgg", "Qt5Agg", "Agg"],  # Linux
 }
 
+NON_INTERACTIVE_BACKENDS = {
+    "agg",
+    "cairo",
+    "inline",
+    "pdf",
+    "pgf",
+    "ps",
+    "svg",
+    "template",
+}
+
+
+def _matplotlib_backend_name(backend: str | None = None) -> str:
+    """Return a normalized matplotlib backend name."""
+    if backend is None:
+        backend = matplotlib.get_backend()
+
+    backend_name = str(backend).lower()
+
+    if backend_name.startswith("module://"):
+        backend_name = backend_name.rsplit(".", 1)[-1]
+
+    if backend_name.startswith("backend_"):
+        backend_name = backend_name.removeprefix("backend_")
+
+    return backend_name
+
+
+def _is_interactive_matplotlib_backend(backend: str | None = None) -> bool:
+    """Check whether a matplotlib backend can process GUI events."""
+    return _matplotlib_backend_name(backend) not in NON_INTERACTIVE_BACKENDS
+
 
 def _set_matplotlib_backend(backend_list: list[str]) -> bool:
     """Attempt to set matplotlib backend from preference list."""
@@ -442,13 +474,13 @@ class EnvBase:
         if figure_kwargs is None:
             figure_kwargs = {}
         if not self.disable_all_plot and self._world.sampling:
-            if self.display:
-                plt.pause(interval)
+            self._env_plot.step(mode, self.objects, **kwargs)
 
             if self.save_ani:
                 self.save_figure(save_gif=True, **figure_kwargs)
 
-            self._env_plot.step(mode, self.objects, **kwargs)
+            if self._should_pause_display():
+                plt.pause(interval)
 
         if self.save_figure_flag:
             self.save_figure(save_gif=True, **figure_kwargs)
@@ -562,7 +594,7 @@ class EnvBase:
 
             self._env_plot.save_animate(**kwargs)
 
-        if self.display:
+        if self._should_pause_display():
             plt.pause(ending_time)
             self.logger.info(
                 f"Simulation Environment '{self._world.name}' closing in {ending_time:.2f} seconds."
@@ -1230,6 +1262,10 @@ class EnvBase:
         set_seed(seed)
         if reload:
             self.reload()
+
+    def _should_pause_display(self) -> bool:
+        """Return True when display is enabled and the backend is interactive."""
+        return self.display and _is_interactive_matplotlib_backend()
 
     def set_status(self, status: str) -> None:
         """

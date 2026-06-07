@@ -26,6 +26,7 @@ from irsim.world.map import (
     GridMapGenerator,
     ImageGridGenerator,
     Map,
+    MazeGridGenerator,
     PerlinGridGenerator,
     build_grid_from_generator,
     resolve_obstacle_map,
@@ -70,6 +71,76 @@ class TestPerlinGridGenerator:
         pmap1 = PerlinGridGenerator(100, 100, fill=0.38, seed=42).generate()
         pmap2 = PerlinGridGenerator(100, 100, fill=0.38, seed=42).generate()
         np.testing.assert_array_equal(pmap1.grid, pmap2.grid)
+
+
+class TestMazeGridGenerator:
+    """Tests for MazeGridGenerator."""
+
+    def test_maze_generate_returns_self(self):
+        """Test that generate() returns self for chaining."""
+        mmap = MazeGridGenerator(25, 25, rows=4, cols=4, seed=42)
+        out = mmap.generate()
+        assert out is mmap
+
+    def test_maze_grid_shape_and_values(self):
+        """Test that MazeGridGenerator.grid has correct shape and binary values."""
+        grid = MazeGridGenerator(25, 23, rows=4, cols=4, seed=42).generate().grid
+        assert grid.shape == (25, 23)
+        assert set(np.unique(grid)).issubset({0.0, 100.0})
+        assert 0.0 in np.unique(grid)
+        assert 100.0 in np.unique(grid)
+
+    def test_maze_same_seed_same_grid(self):
+        """Test that same params produce identical maze grids."""
+        grid1 = MazeGridGenerator(31, 31, rows=5, cols=5, seed=7).generate().grid
+        grid2 = MazeGridGenerator(31, 31, rows=5, cols=5, seed=7).generate().grid
+        np.testing.assert_array_equal(grid1, grid2)
+
+    def test_maze_exit_alias_matches_legacy_entrance(self):
+        """The escape-task exit parameter is equivalent to legacy entrance."""
+        grid1 = (
+            MazeGridGenerator(
+                31,
+                31,
+                rows=5,
+                cols=5,
+                entrance="top_right",
+                seed=7,
+            )
+            .generate()
+            .grid
+        )
+        grid2 = (
+            MazeGridGenerator(
+                31,
+                31,
+                rows=5,
+                cols=5,
+                exit="top_right",
+                seed=7,
+            )
+            .generate()
+            .grid
+        )
+        np.testing.assert_array_equal(grid1, grid2)
+
+    def test_maze_lazy_grid(self):
+        """Test that accessing .grid triggers generation if not yet built."""
+        mmap = MazeGridGenerator(25, 25, rows=4, cols=4, seed=42)
+        assert mmap._grid is None
+        grid = mmap.grid
+        assert grid.shape == (25, 25)
+        assert mmap._grid is not None
+
+    def test_maze_invalid_entrance_raises(self):
+        """Unknown entrance names raise ValueError."""
+        with pytest.raises(ValueError, match="entrance must be one of"):
+            MazeGridGenerator(25, 25, rows=4, cols=4, entrance="left")
+
+    def test_maze_too_small_for_logical_size_raises(self):
+        """Grid must have enough cells for maze walls and passages."""
+        with pytest.raises(ValueError, match="Maze grid is too small"):
+            MazeGridGenerator(8, 8, rows=4, cols=4)
 
 
 class TestPerlinNoiseGeneration:
@@ -402,6 +473,21 @@ class TestBuildGridFromGenerator:
         assert grid.shape == (200, 150)
         assert grid.dtype == np.float64
 
+    def test_maze_generator_from_spec(self):
+        """Maze generator spec builds a grid from world size and resolution."""
+        spec = {
+            "name": "maze",
+            "resolution": 0.5,
+            "rows": 4,
+            "cols": 4,
+            "exit": "bottom_left",
+            "seed": 42,
+        }
+        grid = build_grid_from_generator(spec, world_width=10.0, world_height=10.0)
+        assert grid.shape == (20, 20)
+        assert grid.dtype == np.float64
+        assert set(np.unique(grid)).issubset({0.0, 100.0})
+
     def test_perlin_registered(self):
         """PerlinGridGenerator is auto-registered under 'perlin'."""
         assert "perlin" in GridMapGenerator.registry
@@ -411,6 +497,11 @@ class TestBuildGridFromGenerator:
         """ImageGridGenerator is auto-registered under 'image'."""
         assert "image" in GridMapGenerator.registry
         assert GridMapGenerator.registry["image"] is ImageGridGenerator
+
+    def test_maze_registered(self):
+        """MazeGridGenerator is auto-registered under 'maze'."""
+        assert "maze" in GridMapGenerator.registry
+        assert GridMapGenerator.registry["maze"] is MazeGridGenerator
 
 
 # ---------------------------------------------------------------------------
@@ -751,6 +842,23 @@ class TestWorldGridMap:
         )
         assert w.grid_map is not None
         # 10/0.5 = 20 cells per dimension
+        assert w.grid_map.shape == (20, 20)
+        assert w.obstacle_index is not None
+
+    def test_gen_grid_map_dict_maze(self):
+        """obstacle_map as dict name=maze uses build_grid_from_generator."""
+        w = World(
+            obstacle_map={
+                "name": "maze",
+                "resolution": 0.5,
+                "rows": 4,
+                "cols": 4,
+                "seed": 1,
+            },
+            width=10,
+            height=10,
+        )
+        assert w.grid_map is not None
         assert w.grid_map.shape == (20, 20)
         assert w.obstacle_index is not None
 
