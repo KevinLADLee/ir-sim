@@ -4,6 +4,7 @@
 
 *A lightweight, YAML-driven robot simulator for navigation, control, and learning*
 
+<a href="https://arxiv.org/pdf/2606.08729"><img src="https://img.shields.io/badge/arXiv-2606.08729-b31b1b?style=for-the-badge" alt="arXiv Paper"></a>
 <a href="https://pypi.org/project/ir-sim/"><img src="https://img.shields.io/pypi/v/ir-sim?color=orange&style=for-the-badge" alt="PyPI Version"></a>
 <a href="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue"><img src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue?style=for-the-badge" alt="Python Version"></a>
 <a href="https://github.com/hanruihua/ir-sim/actions/workflows/python-version-test.yml"><img src="https://img.shields.io/github/actions/workflow/status/hanruihua/ir-sim/python-version-test.yml?branch=main&style=for-the-badge&label=CI" alt="CI"></a>
@@ -160,6 +161,20 @@ For more examples, see the [usage directory](https://github.com/hanruihua/ir-sim
 
 - [DRL-robot-navigation-IR-SIM](https://github.com/reiniscimurs/DRL-robot-navigation-IR-SIM) -- Deep reinforcement learning for robot navigation.
 - [AutoNavRL](https://github.com/harshmahesheka/AutoNavRL) -- Autonomous navigation using reinforcement learning.
+- [IRSIM-3DGS-Bridge](https://github.com/Wayneyujie/IRSIM-3DGS-Bridge) -- A closed-loop bridge from 3D Gaussian Splatting scenes to IR-SIM planning/following and back to Habitat-GS trajectory playback.
+
+## Citation
+
+If you find IR-SIM useful, please consider starring ⭐ this project and citing our paper:
+
+```bibtex
+@article{han2026ir,
+  title={IR-SIM: A Lightweight Skill-Native Simulator for Navigation, Learning, and Benchmarking},
+  author={Han, Ruihua and Wang, Shuai and Li, Chengyang and Gao, Rui and Wang, Xinyi and Liu, Zhe and Li, Guoliang and Lu, Yupu and Hao, Qi and Pan, Jia and Zhao, Hengshuang},
+  journal={arXiv preprint arXiv:2606.08729},
+  year={2026}
+}
+```
 
 ## Contributing
 
@@ -172,4 +187,3 @@ Contributions are welcome! Please see [CONTRIBUTING.md](https://github.com/hanru
 ## License
 
 IR-SIM is released under the [MIT License](https://github.com/hanruihua/ir-sim?tab=MIT-1-ov-file).
-

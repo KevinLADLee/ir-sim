@@ -81,6 +81,30 @@ def find_file(root_path: str | None, target_filename: str) -> str | None:
     return None
 
 
+def _emit_log(level: str, msg: str) -> None:
+    """Emit ``msg`` at ``level`` through the env logger, if one is configured.
+
+    Resolves the logger via the global ``env_param`` proxy -- the same fallback
+    branch objects use in their ``_env_param`` accessor -- for context-free code
+    (geometry/kinematics handlers, etc.) that has no env instance. No-ops when no
+    logger is configured, e.g. geometry built standalone outside ``irsim.make``,
+    instead of printing unconditionally.
+    """
+    logger = getattr(env_param, "logger", None)
+    if logger is not None:
+        getattr(logger, level)(msg)
+
+
+def log_warning(msg: str) -> None:
+    """Emit a warning through the env logger so it respects ``log_level``."""
+    _emit_log("warning", msg)
+
+
+def log_error(msg: str) -> None:
+    """Emit an error through the env logger so it respects ``log_level``."""
+    _emit_log("error", msg)
+
+
 def WrapToPi(rad: float, positive: bool = False) -> float:
     """The function `WrapToPi` transforms an angle in radians to the range [-pi, pi].
 
@@ -509,7 +533,7 @@ def gen_inequal_from_vertex(vertex: np.ndarray):
     convex_flag, order = is_convex_and_ordered(vertex)
 
     if not convex_flag:
-        print("The polygon constructed by vertex is not convex.")
+        log_warning("The polygon constructed by vertex is not convex.")
         return None, None
 
     if order == "CW":
@@ -622,9 +646,11 @@ def validate_shape(**shape_requirements):
             e.g., state=3 means state.shape[0] must be >= 3
 
     Example:
-        @validate_shape(state=3, velocity=2)
-        def differential_kinematics(state, velocity, step_time):
-            ...
+        .. code-block:: python
+
+            @validate_shape(state=3, velocity=2)
+            def differential_kinematics(state, velocity, step_time):
+                ...
 
     Raises:
         TypeError: If parameter is not a numpy array.
@@ -670,9 +696,11 @@ def validate_length(**length_requirements):
             e.g., alpha=4 means len(alpha) must be >= 4
 
     Example:
-        @validate_length(alpha=4)
-        def some_function(alpha):
-            ...
+        .. code-block:: python
+
+            @validate_length(alpha=4)
+            def some_function(alpha):
+                ...
 
     Raises:
         TypeError: If parameter doesn't support len().
@@ -723,9 +751,11 @@ def ensure_column_vector(*param_names):
         *param_names: Names of parameters to convert.
 
     Example:
-        @ensure_column_vector('state', 'velocity')
-        def some_function(state, velocity, step_time):
-            ...
+        .. code-block:: python
+
+            @ensure_column_vector('state', 'velocity')
+            def some_function(state, velocity, step_time):
+                ...
     """
 
     def decorator(func):
@@ -765,9 +795,11 @@ def ensure_numpy(*param_names):
         *param_names: Names of parameters to convert.
 
     Example:
-        @ensure_numpy('data', 'weights')
-        def some_function(data, weights):
-            ...
+        .. code-block:: python
+
+            @ensure_numpy('data', 'weights')
+            def some_function(data, weights):
+                ...
     """
 
     def decorator(func):
