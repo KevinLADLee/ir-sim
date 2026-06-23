@@ -96,6 +96,14 @@ class TestMazeGridGenerator:
         grid2 = MazeGridGenerator(31, 31, rows=5, cols=5, seed=7).generate().grid
         np.testing.assert_array_equal(grid1, grid2)
 
+    def test_maze_goal_room_can_fill_logical_maze(self):
+        """A full-maze goal room is already connected and should still carve an exit."""
+        grid = MazeGridGenerator(5, 5, rows=2, cols=2, seed=7).generate().grid
+
+        assert grid.shape == (5, 5)
+        assert np.all(grid[1:4, 1:4] == 0.0)
+        assert grid[1, 0] == 0.0
+
     def test_maze_exit_alias_matches_legacy_entrance(self):
         """The escape-task exit parameter is equivalent to legacy entrance."""
         grid1 = (

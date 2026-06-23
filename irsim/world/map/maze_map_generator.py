@@ -207,6 +207,9 @@ def rasterize_maze(
     grid[gx0:gx1, gy0:gy1] = 0.0
 
     def carve_goal_connection() -> None:
+        if goal.x0 == 0 and goal.y0 == 0 and goal.x1 == cols and goal.y1 == rows:
+            return
+
         for gx in range(goal.x0, goal.x1):
             if goal.y0 > 0:
                 x0, x1, _y0, _ = cell_bounds[(gx, goal.y0)]
