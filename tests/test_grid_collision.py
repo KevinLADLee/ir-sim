@@ -55,6 +55,7 @@ class TestObstacleMapGridInit:
         assert obstacle_map.grid_map.shape == (10, 10)
         np.testing.assert_array_equal(obstacle_map.grid_reso, np.array([[1.0], [1.0]]))
         assert obstacle_map.world_offset == [0.0, 0.0]
+        assert obstacle_map.participates_in_lifecycle is False
 
     def test_init_without_grid_map(self):
         """Test initialization without grid_map (default values)."""
@@ -66,6 +67,7 @@ class TestObstacleMapGridInit:
         assert obstacle_map.grid_map is None
         np.testing.assert_array_equal(obstacle_map.grid_reso, np.array([[1.0], [1.0]]))
         assert obstacle_map.world_offset == [0.0, 0.0]
+        assert obstacle_map.participates_in_lifecycle is False
 
     def test_init_with_custom_offset(self):
         """Test initialization with custom world offset."""

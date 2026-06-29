@@ -13,7 +13,12 @@ import numpy as np
 import pytest
 
 import irsim
-from irsim.env.env_base import EnvBase
+from irsim.env import env_base as env_base_module
+from irsim.env.env_base import (
+    EnvBase,
+    _is_interactive_matplotlib_backend,
+    _matplotlib_backend_name,
+)
 
 
 class TestEnvironmentCreation:
@@ -361,6 +366,70 @@ class TestEnvironmentFlags:
 
 class TestSimulationLoop:
     """Tests for simulation step and render loop."""
+
+    @pytest.mark.parametrize(
+        ("backend", "normalized"),
+        [
+            ("Agg", "agg"),
+            ("TkAgg", "tkagg"),
+            ("QtAgg", "qtagg"),
+            ("module://matplotlib_inline.backend_inline", "inline"),
+            ("module://matplotlib.backends.backend_agg", "agg"),
+            ("module://ipympl.backend_nbagg", "nbagg"),
+        ],
+    )
+    def test_matplotlib_backend_name_normalization(self, backend, normalized):
+        """Backend normalization handles builtin and module backends."""
+        assert _matplotlib_backend_name(backend) == normalized
+
+    @pytest.mark.parametrize(
+        ("backend", "expected"),
+        [
+            ("Agg", False),
+            ("PDF", False),
+            ("SVG", False),
+            ("module://matplotlib_inline.backend_inline", False),
+            ("TkAgg", True),
+            ("QtAgg", True),
+            ("Qt5Agg", True),
+            ("module://ipympl.backend_nbagg", True),
+        ],
+    )
+    def test_matplotlib_backend_interactivity_detection(self, backend, expected):
+        """Only interactive matplotlib backends should receive GUI pauses."""
+        assert _is_interactive_matplotlib_backend(backend) is expected
+
+    def test_render_skips_pause_on_noninteractive_backend(
+        self, env_factory, monkeypatch
+    ):
+        """Headless/Agg rendering updates plots without a GUI pause."""
+        env = env_factory("test_collision_world.yaml", display=True)
+        monkeypatch.setattr(env_base_module.matplotlib, "get_backend", lambda: "Agg")
+
+        with patch.object(env_base_module.plt, "pause") as mock_pause:
+            env.render(0.01)
+
+        mock_pause.assert_not_called()
+
+    def test_render_pauses_on_interactive_backend(self, env_factory, monkeypatch):
+        """Interactive backends still pump the GUI event loop."""
+        env = env_factory("test_collision_world.yaml", display=True)
+        monkeypatch.setattr(env_base_module.matplotlib, "get_backend", lambda: "TkAgg")
+
+        with patch.object(env_base_module.plt, "pause") as mock_pause:
+            env.render(0.01)
+
+        mock_pause.assert_called_once_with(0.01)
+
+    def test_end_skips_pause_on_noninteractive_backend(self, env_factory, monkeypatch):
+        """Headless/Agg shutdown should not wait for a GUI window."""
+        env = env_factory("test_collision_world.yaml", display=True)
+        monkeypatch.setattr(env_base_module.matplotlib, "get_backend", lambda: "Agg")
+
+        with patch.object(env_base_module.plt, "pause") as mock_pause:
+            env.end(3.0)
+
+        mock_pause.assert_not_called()
 
     @pytest.mark.parametrize("projection", ["2d", "3d"])
     def test_basic_simulation_loop(self, env_factory, projection):
@@ -1043,10 +1112,102 @@ class TestObjectsCheckStatus:
     """Test _objects_check_status method (line 363)."""
 
     def test_objects_check_status(self, env_factory):
-        """_objects_check_status calls check_status on all objects (line 363)."""
+        """_objects_check_status calls check_status on lifecycle objects."""
         env = env_factory("test_collision_world.yaml")
         env._objects_check_status()
         # No exception means it works
+
+    def test_grid_map_excluded_from_lifecycle_status(self, env_factory, monkeypatch):
+        """ObstacleMap stays spatially registered but skips lifecycle status."""
+        env = env_factory("test_grid_map.yaml")
+        obstacle_map = env._map_collection[0]
+
+        assert obstacle_map in env.objects
+        assert obstacle_map in env._map_collection
+        assert obstacle_map not in env.lifecycle_objects
+        assert env.robot in env.lifecycle_objects
+        assert all(obj in env.lifecycle_objects for obj in env._obstacle_collection)
+
+        candidate_indices = env._env_param.GeometryTree.query(obstacle_map.geometry)
+        assert any(
+            env.objects[int(index)] is obstacle_map for index in candidate_indices
+        )
+
+        calls = {"map": 0, "robot": 0}
+        original_robot_check_status = env.robot.check_status
+
+        def map_check_status():
+            calls["map"] += 1
+
+        def robot_check_status():
+            calls["robot"] += 1
+            return original_robot_check_status()
+
+        monkeypatch.setattr(obstacle_map, "check_status", map_check_status)
+        monkeypatch.setattr(env.robot, "check_status", robot_check_status)
+
+        env._objects_check_status()
+
+        assert calls["map"] == 0
+        assert calls["robot"] == 1
+
+    def test_grid_map_collision_still_detected_by_robot(self, env_factory):
+        """Passive map layers remain collision targets for robot lifecycle checks."""
+        env = env_factory("test_grid_map.yaml")
+        obstacle_map = env._map_collection[0]
+        occupied = np.argwhere(obstacle_map.grid_map > 50)
+        i, j = occupied[0]
+        x_reso = obstacle_map.grid_reso[0, 0]
+        y_reso = obstacle_map.grid_reso[1, 0]
+        offset_x, offset_y = obstacle_map.world_offset
+        state = env.robot.state.copy()
+        state[0, 0] = offset_x + (i + 0.5) * x_reso
+        state[1, 0] = offset_y + (j + 0.5) * y_reso
+
+        env.robot.set_state(state)
+        env.build_tree()
+        env._status_step()
+
+        assert env.robot.collision is True
+        assert obstacle_map in env.robot.collision_obj
+        assert env.status == "Collision"
+
+    def test_grid_map_collision_after_env_step(self, env_factory):
+        """Robot-map collision is still checked during a full env step."""
+        env = env_factory("test_grid_map.yaml")
+        obstacle_map = env._map_collection[0]
+        occupied = np.argwhere(obstacle_map.grid_map > 50)
+        i, j = occupied[0]
+        x_reso = obstacle_map.grid_reso[0, 0]
+        y_reso = obstacle_map.grid_reso[1, 0]
+        offset_x, offset_y = obstacle_map.world_offset
+        state = env.robot.state.copy()
+        state[0, 0] = offset_x + (i + 0.5) * x_reso
+        state[1, 0] = offset_y + (j + 0.5) * y_reso
+
+        env.robot.set_state(state)
+        env.build_tree()
+        env.step(np.zeros(env.robot.vel_shape))
+
+        assert env.robot.collision is True
+        assert obstacle_map in env.robot.collision_obj
+        assert env.status == "Collision"
+
+    def test_grid_map_lidar_visible_before_and_after_step(self, env_factory):
+        """Passive map layers remain sensor targets across step updates."""
+        env = env_factory("test_grid_map.yaml")
+        env._objects_sensor_step()
+        before_scan = env.get_lidar_scan()
+        before = before_scan["ranges"].copy()
+
+        env.step(np.zeros(env.robot.vel_shape))
+        after_scan = env.get_lidar_scan()
+        after = after_scan["ranges"]
+
+        assert np.any(np.isfinite(before))
+        assert np.any(before < before_scan["range_max"])
+        assert np.any(np.isfinite(after))
+        assert np.any(after < after_scan["range_max"])
 
     def test_object_step_deprecated(self, env_factory):
         """_object_step with action (line 358)."""

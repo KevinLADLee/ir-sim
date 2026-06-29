@@ -158,6 +158,8 @@ class ObjectBase:
         arrive_flag (bool): Flag indicating if the object has arrived at the goal.
         collision_flag (bool): Flag indicating a collision has occurred.
         unobstructed (bool): Indicates if the object has an unobstructed path.
+        participates_in_lifecycle (bool): Whether the object participates in
+            per-tick lifecycle status updates.
         static (bool): Indicates if the object is static.
         vel_min (np.ndarray): Minimum velocity limits.
         vel_max (np.ndarray): Maximum velocity limits.
@@ -198,6 +200,7 @@ class ObjectBase:
         "state_dim",
         "vel_dim",
         "unobstructed",
+        "participates_in_lifecycle",
         "fov",
         "fov_radius",
         "name",
@@ -232,6 +235,7 @@ class ObjectBase:
         state_dim: int | None = None,
         vel_dim: int | None = None,
         unobstructed: bool = False,
+        participates_in_lifecycle: bool = True,
         fov: float | None = None,
         fov_radius: float | None = None,
         name: str | None = None,
@@ -434,6 +438,7 @@ class ObjectBase:
         self.arrive_flag = False
         self.collision_flag = False
         self.unobstructed = unobstructed
+        self.participates_in_lifecycle = participates_in_lifecycle
 
         # --- 12. Plot state ---
         self.plot_kwargs = kwargs.get("plot", {})
